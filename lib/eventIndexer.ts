@@ -1,8 +1,25 @@
+/**
+ * Per-token event history fetcher.
+ *
+ * Problem: public RPCs cap getLogs to ~10k-50k blocks per call.
+ * Scanning from block 19,600,000 to ~22,000,000 (2.4M blocks) in one call fails.
+ *
+ * Solution:
+ *  1. Chunk getLogs into 50k-block windows, run in parallel batches of 5
+ *  2. Cache results in module memory per tokenId (TTL: 10 min)
+ *  3. Once fetched, serve from cache instantly
+ */
+
 import { parseAbiItem } from "viem";
 import { publicClient, CANVAS_ADDRESS } from "./viemClient";
 
+export const DEPLOY_BLOCK = 19_600_000n;
+const CHUNK = 50_000n;       // Safe for all public RPCs
+const PARALLEL = 5;          // Concurrent chunk fetches
+const TTL_MS = 10 * 60_000;  // 10 min cache per token
+
 export interface EditEvent {
-  blockNumber: bigint;
+  blockNumber: number;
   timestamp: number;
   txHash: string;
   changeCount: number;
@@ -11,7 +28,7 @@ export interface EditEvent {
 }
 
 export interface BurnEvent {
-  blockNumber: bigint;
+  blockNumber: number;
   timestamp: number;
   txHash: string;
   tokenId: number;
@@ -19,142 +36,139 @@ export interface BurnEvent {
   owner: string;
 }
 
-// NormiesCanvas deployed at block ~19_614_000 (Feb 2024).
-// Using a slightly earlier safe floor so we never miss events.
-export const DEPLOY_BLOCK = 19_600_000n;
+// ─── Module-level cache ───────────────────────────────────────────────────────
 
-// ─── Block timestamp batching ─────────────────────────────────────────────────
-const timestampCache = new Map<bigint, number>();
+interface TokenCache {
+  edits: EditEvent[];
+  burns: BurnEvent[];
+  fetchedAt: number;
+}
 
-/**
- * Fetch timestamps for a batch of block numbers using Promise.all.
- * Much faster than sequential awaits.
- */
-async function batchGetTimestamps(blockNumbers: bigint[]): Promise<Map<bigint, number>> {
-  const unique = [...new Set(blockNumbers)];
-  const missing = unique.filter((b) => !timestampCache.has(b));
+const tokenCache = new Map<number, TokenCache>();
 
+// ─── Timestamp helpers ────────────────────────────────────────────────────────
+
+const tsCache = new Map<bigint, number>();
+
+async function getTimestamps(blocks: bigint[]): Promise<Map<bigint, number>> {
+  const missing = [...new Set(blocks)].filter(b => !tsCache.has(b));
   if (missing.length > 0) {
     const results = await Promise.all(
-      missing.map(async (blockNumber) => {
+      missing.map(async bn => {
         try {
-          const block = await publicClient.getBlock({ blockNumber });
-          return { blockNumber, ts: Number(block.timestamp) };
+          const block = await publicClient.getBlock({ blockNumber: bn });
+          return { bn, ts: Number(block.timestamp) };
         } catch {
-          return { blockNumber, ts: Math.floor(Date.now() / 1000) };
+          return { bn, ts: Math.floor(Date.now() / 1000) };
         }
       })
     );
-    for (const { blockNumber, ts } of results) {
-      timestampCache.set(blockNumber, ts);
-    }
+    for (const { bn, ts } of results) tsCache.set(bn, ts);
   }
-
   const out = new Map<bigint, number>();
-  for (const b of blockNumbers) {
-    out.set(b, timestampCache.get(b) ?? Math.floor(Date.now() / 1000));
-  }
+  for (const b of blocks) out.set(b, tsCache.get(b) ?? Math.floor(Date.now() / 1000));
   return out;
 }
 
-// ─── Per-token history ────────────────────────────────────────────────────────
+// ─── Chunked log fetching ─────────────────────────────────────────────────────
 
-export async function getEditHistory(tokenId: number): Promise<EditEvent[]> {
-  const logs = await publicClient.getLogs({
-    address: CANVAS_ADDRESS,
-    event: parseAbiItem(
-      "event PixelsTransformed(address indexed transformer, uint256 indexed tokenId, uint256 changeCount, uint256 newPixelCount)"
-    ),
-    fromBlock: DEPLOY_BLOCK,
-    toBlock: "latest",
-    args: { tokenId: BigInt(tokenId) },
-  });
+const TRANSFORM_ABI = parseAbiItem(
+  "event PixelsTransformed(address indexed transformer, uint256 indexed tokenId, uint256 changeCount, uint256 newPixelCount)"
+);
+const BURN_ABI = parseAbiItem(
+  "event BurnRevealed(uint256 indexed commitId, address indexed owner, uint256 indexed receiverTokenId, uint256 totalActions, bool expired)"
+);
 
-  if (logs.length === 0) return [];
-
-  const blockNumbers = logs.map((l) => l.blockNumber!);
-  const timestamps = await batchGetTimestamps(blockNumbers);
-
-  return logs
-    .map((log) => ({
-      blockNumber: log.blockNumber!,
-      timestamp: timestamps.get(log.blockNumber!) ?? Math.floor(Date.now() / 1000),
-      txHash: log.transactionHash!,
-      changeCount: Number(log.args.changeCount),
-      newPixelCount: Number(log.args.newPixelCount),
-      transformer: log.args.transformer as string,
-    }))
-    .sort((a, b) => a.timestamp - b.timestamp);
-}
-
-export async function getBurnHistory(tokenId: number): Promise<BurnEvent[]> {
-  const logs = await publicClient.getLogs({
-    address: CANVAS_ADDRESS,
-    event: parseAbiItem(
-      "event BurnRevealed(uint256 indexed commitId, address indexed owner, uint256 indexed receiverTokenId, uint256 totalActions, bool expired)"
-    ),
-    fromBlock: DEPLOY_BLOCK,
-    toBlock: "latest",
-    args: { receiverTokenId: BigInt(tokenId) },
-  });
-
-  if (logs.length === 0) return [];
-
-  const blockNumbers = logs.map((l) => l.blockNumber!);
-  const timestamps = await batchGetTimestamps(blockNumbers);
-
-  return logs
-    .map((log) => ({
-      blockNumber: log.blockNumber!,
-      timestamp: timestamps.get(log.blockNumber!) ?? Math.floor(Date.now() / 1000),
-      txHash: log.transactionHash!,
-      tokenId: Number(log.args.receiverTokenId),
-      totalActions: Number(log.args.totalActions),
-      owner: log.args.owner as string,
-    }))
-    .sort((a, b) => a.timestamp - b.timestamp);
-}
-
-// ─── Global leaderboard scan ──────────────────────────────────────────────────
-
-export async function getGlobalEditData(
-  onProgress?: (progress: number) => void
-): Promise<Map<number, { totalEdits: number; maxSingleEdit: number; totalChanges: number }>> {
-  const CHUNK = 10_000n;
-  const data = new Map<number, { totalEdits: number; maxSingleEdit: number; totalChanges: number }>();
-
-  const latest = await publicClient.getBlockNumber();
-  const totalChunks = Number((latest - DEPLOY_BLOCK) / CHUNK) + 1;
-  let chunks = 0;
-  let from = DEPLOY_BLOCK;
-
-  while (from <= latest) {
-    const to = from + CHUNK - 1n < latest ? from + CHUNK - 1n : latest;
-
-    const logs = await publicClient.getLogs({
-      address: CANVAS_ADDRESS,
-      event: parseAbiItem(
-        "event PixelsTransformed(address indexed transformer, uint256 indexed tokenId, uint256 changeCount, uint256 newPixelCount)"
-      ),
-      fromBlock: from,
-      toBlock: to,
-    });
-
-    for (const log of logs) {
-      const tokenId = Number(log.args.tokenId);
-      const changeCount = Number(log.args.changeCount);
-      const existing = data.get(tokenId) ?? { totalEdits: 0, maxSingleEdit: 0, totalChanges: 0 };
-      data.set(tokenId, {
-        totalEdits: existing.totalEdits + 1,
-        maxSingleEdit: Math.max(existing.maxSingleEdit, changeCount),
-        totalChanges: existing.totalChanges + changeCount,
-      });
-    }
-
-    chunks++;
-    onProgress?.(chunks / totalChunks);
-    from = to + 1n;
+async function fetchLogsChunked<T>(
+  fromBlock: bigint,
+  toBlock: bigint,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  event: any,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  args: Record<string, any>
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+): Promise<any[]> {
+  const chunks: Array<[bigint, bigint]> = [];
+  for (let f = fromBlock; f <= toBlock; f += CHUNK) {
+    const t = f + CHUNK - 1n < toBlock ? f + CHUNK - 1n : toBlock;
+    chunks.push([f, t]);
   }
 
-  return data;
+  const allLogs: unknown[] = [];
+  for (let i = 0; i < chunks.length; i += PARALLEL) {
+    const window = chunks.slice(i, i + PARALLEL);
+    const results = await Promise.allSettled(
+      window.map(([f, t]) =>
+        publicClient.getLogs({ address: CANVAS_ADDRESS, event, args, fromBlock: f, toBlock: t })
+      )
+    );
+    for (const r of results) {
+      if (r.status === "fulfilled") allLogs.push(...r.value);
+    }
+  }
+  return allLogs;
+}
+
+// ─── Public API ───────────────────────────────────────────────────────────────
+
+export async function getTokenHistory(tokenId: number): Promise<{ edits: EditEvent[]; burns: BurnEvent[] }> {
+  const cached = tokenCache.get(tokenId);
+  if (cached && Date.now() - cached.fetchedAt < TTL_MS) {
+    return { edits: cached.edits, burns: cached.burns };
+  }
+
+  const latest = await publicClient.getBlockNumber();
+
+  const [editLogs, burnLogs] = await Promise.all([
+    fetchLogsChunked(DEPLOY_BLOCK, latest, TRANSFORM_ABI, { tokenId: BigInt(tokenId) }),
+    fetchLogsChunked(DEPLOY_BLOCK, latest, BURN_ABI, { receiverTokenId: BigInt(tokenId) }),
+  ]);
+
+  // Batch-fetch all timestamps
+  const allBlocks = [
+    ...editLogs.map((l: { blockNumber: bigint }) => l.blockNumber),
+    ...burnLogs.map((l: { blockNumber: bigint }) => l.blockNumber),
+  ].filter(Boolean) as bigint[];
+
+  const timestamps = allBlocks.length > 0 ? await getTimestamps(allBlocks) : new Map<bigint, number>();
+  const ts = (bn: bigint) => timestamps.get(bn) ?? Math.floor(Date.now() / 1000);
+
+  const edits: EditEvent[] = editLogs
+    .map((log: {
+      blockNumber: bigint; transactionHash: string;
+      args: { changeCount: bigint; newPixelCount: bigint; transformer: string }
+    }) => ({
+      blockNumber:   Number(log.blockNumber),
+      timestamp:     ts(log.blockNumber),
+      txHash:        log.transactionHash,
+      changeCount:   Number(log.args.changeCount),
+      newPixelCount: Number(log.args.newPixelCount),
+      transformer:   log.args.transformer,
+    }))
+    .sort((a, b) => a.blockNumber - b.blockNumber);
+
+  const burns: BurnEvent[] = burnLogs
+    .map((log: {
+      blockNumber: bigint; transactionHash: string;
+      args: { receiverTokenId: bigint; totalActions: bigint; owner: string }
+    }) => ({
+      blockNumber:  Number(log.blockNumber),
+      timestamp:    ts(log.blockNumber),
+      txHash:       log.transactionHash,
+      tokenId:      Number(log.args.receiverTokenId),
+      totalActions: Number(log.args.totalActions),
+      owner:        log.args.owner,
+    }))
+    .sort((a, b) => a.blockNumber - b.blockNumber);
+
+  tokenCache.set(tokenId, { edits, burns, fetchedAt: Date.now() });
+  return { edits, burns };
+}
+
+// Keep old exports for backward compat
+export async function getEditHistory(tokenId: number): Promise<EditEvent[]> {
+  return (await getTokenHistory(tokenId)).edits;
+}
+export async function getBurnHistory(tokenId: number): Promise<BurnEvent[]> {
+  return (await getTokenHistory(tokenId)).burns;
 }

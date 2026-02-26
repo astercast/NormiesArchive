@@ -25,7 +25,7 @@ const PLAY_INTERVAL_MS = 400;
 export default function NormieDetailClient({ tokenId }: Props) {
   const {
     originalPixels, currentPixels, diff, diffAsIndices, heatmapData,
-    info, traits, editHistory, burnHistory, frames, isLoading, hasError, lifeStory, normieType,
+    info, traits, editHistory, burnHistory, frames, isLoading, hasError, historyLoading, lifeStory, normieType,
   } = useNormieHistory(tokenId);
 
   const [step,           setStep]           = useState(0);
@@ -270,7 +270,7 @@ export default function NormieDetailClient({ tokenId }: Props) {
             </div>
 
             {/* Loading overlay for frames */}
-            {isLoading && currentFrame && (
+            {historyLoading && currentFrame && (
               <div className="absolute inset-0 flex items-center justify-center bg-n-bg/40">
                 <Loader2 className="w-6 h-6 animate-spin text-n-muted" />
               </div>
@@ -341,7 +341,7 @@ export default function NormieDetailClient({ tokenId }: Props) {
               />
             ) : (
               <div className="text-xs font-mono text-n-faint text-center py-6">
-                {isLoading
+                {historyLoading
                   ? <span className="flex items-center justify-center gap-2">
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
                       loading on-chain history…
