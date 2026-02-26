@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { getEditHistory, getBurnHistory } from "@/lib/eventIndexer";
 
-export const revalidate = 300; // 5 minutes
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 interface Props {
   params: Promise<{ id: string }>;
