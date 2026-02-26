@@ -3,6 +3,7 @@ import { getEditHistory, getBurnHistory } from "@/lib/eventIndexer";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
+export const maxDuration = 60;
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -12,8 +13,8 @@ export async function GET(_req: Request, { params }: Props) {
   const { id } = await params;
   const tokenId = parseInt(id);
 
-  if (isNaN(tokenId) || tokenId < 1 || tokenId > 10000) {
-    return NextResponse.json({ error: "Invalid token ID" }, { status: 400 });
+  if (isNaN(tokenId) || tokenId < 0 || tokenId > 9999) {
+    return NextResponse.json({ error: "Invalid token ID (must be 0–9999)" }, { status: 400 });
   }
 
   try {
@@ -21,7 +22,6 @@ export async function GET(_req: Request, { params }: Props) {
       getEditHistory(tokenId),
       getBurnHistory(tokenId),
     ]);
-
     return NextResponse.json({ tokenId, edits, burns });
   } catch (error) {
     console.error("History error:", error);

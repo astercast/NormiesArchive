@@ -2,117 +2,121 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { Loader2, Zap } from "lucide-react";
+import type { UpgradedNormie } from "@/lib/upgradedNormies";
 
-// Seed pool — we'll filter down to only those that are actually customized
-const CANDIDATE_IDS = [
-  42, 69, 100, 200, 300, 404, 420, 500, 600, 700, 777,
-  888, 999, 1000, 1111, 1337, 1500, 1600, 1700, 1800,
-  1999, 2000, 2100, 2222, 2500, 2718, 3000, 3141, 3333,
-  3500, 4000, 4200, 4321, 4444, 5000, 5555, 6000, 6666,
-  6969, 7000, 7500, 7777, 8000, 8500, 8888, 9000, 9500,
-  9876, 9999, 1234, 2345, 3456, 4567, 5678, 6789, 8765,
-  9876, 1618, 2718, 3141, 1729, 8008, 5040,
-];
-
-interface NormieCard {
-  id: number;
-  level: number;
-  customized: boolean;
-}
-
-async function fetchInfo(id: number): Promise<NormieCard> {
-  try {
-    const res = await fetch(`https://api.normies.art/normie/${id}/canvas/info`, {
-      next: { revalidate: 300 },
-    });
-    if (!res.ok) throw new Error("not ok");
-    const data = await res.json();
-    return { id, level: data.level ?? 1, customized: data.customized ?? false };
-  } catch {
-    return { id, level: 1, customized: false };
-  }
-}
+const BASE = "https://api.normies.art";
 
 function LevelBadge({ level }: { level: number }) {
-  const color =
-    level >= 50 ? "bg-yellow-400 text-black" :
-    level >= 20 ? "bg-violet-500 text-white" :
-    level >= 10 ? "bg-sky-500 text-white" :
-    "bg-n-border text-n-muted";
-
+  const bg =
+    level >= 20 ? "bg-amber-400 text-black" :
+    level >= 10 ? "bg-violet-500 text-white" :
+    level >= 5  ? "bg-sky-500 text-white" :
+                  "bg-n-text/70 text-n-bg";
   return (
-    <span
-      className={`absolute bottom-0.5 right-0.5 text-[8px] font-mono font-bold leading-none px-0.5 rounded ${color}`}
-    >
+    <span className={`absolute bottom-0.5 right-0.5 text-[8px] leading-none font-mono font-bold px-0.5 py-px rounded ${bg}`}>
       {level}
     </span>
   );
 }
 
+function TypeBadge({ type }: { type: string }) {
+  if (type === "Alien") return <span className="absolute top-0.5 left-0.5 text-[7px] leading-none font-mono px-0.5 py-px rounded bg-emerald-500/80 text-white">AL</span>;
+  if (type === "Agent") return <span className="absolute top-0.5 left-0.5 text-[7px] leading-none font-mono px-0.5 py-px rounded bg-violet-500/80 text-white">AG</span>;
+  if (type === "Cat")   return <span className="absolute top-0.5 left-0.5 text-[7px] leading-none font-mono px-0.5 py-px rounded bg-orange-400/80 text-white">CT</span>;
+  return null;
+}
+
+function EditCountBadge({ count }: { count?: number }) {
+  if (!count || count < 2) return null;
+  return (
+    <span className="absolute top-0.5 right-0.5 text-[7px] leading-none font-mono px-0.5 py-px rounded bg-n-text/60 text-n-bg flex items-center gap-px">
+      <Zap className="w-[6px] h-[6px]" />{count}
+    </span>
+  );
+}
+
 export default function ExploreGrid() {
-  const [cards, setCards] = useState<NormieCard[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [normies, setNormies]   = useState<UpgradedNormie[]>([]);
+  const [loading, setLoading]   = useState(true);
+  const [scannedAt, setScanned] = useState<number | null>(null);
+  const [latestBlock, setBlock] = useState<number | null>(null);
 
   useEffect(() => {
-    // Dedupe candidate IDs
-    const ids = [...new Set(CANDIDATE_IDS)];
-
-    // Fetch in parallel, batched to avoid hammering API
-    const BATCH = 10;
-    let results: NormieCard[] = [];
-
-    async function run() {
-      for (let i = 0; i < ids.length; i += BATCH) {
-        const batch = ids.slice(i, i + BATCH);
-        const batchResults = await Promise.all(batch.map(fetchInfo));
-        results = [...results, ...batchResults];
-        // Show upgraded ones as they come in
-        const upgraded = results.filter((c) => c.customized && c.level > 1);
-        setCards(upgraded);
-      }
-      setLoading(false);
-    }
-
-    run();
+    fetch("/api/upgraded")
+      .then(r => r.json())
+      .then(d => {
+        if (d.upgraded?.length) {
+          setNormies(d.upgraded as UpgradedNormie[]);
+        }
+        if (d.scannedAt)   setScanned(d.scannedAt);
+        if (d.latestBlock) setBlock(d.latestBlock);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
   }, []);
+
+  const sorted = [...normies].sort((a, b) => b.level - a.level || b.ap - a.ap);
+
+  if (loading) {
+    return (
+      <section className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-xs font-mono text-n-muted uppercase tracking-widest">upgraded normies</h2>
+        </div>
+        <div className="flex items-center gap-3 py-8 text-n-faint font-mono text-xs">
+          <Loader2 className="w-4 h-4 animate-spin" />
+          indexing PixelsTransformed events from block 19,614,531…
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-xs font-mono text-n-muted uppercase tracking-widest">explore</h2>
-        {loading && (
-          <span className="text-xs font-mono text-n-faint animate-pulse">loading upgraded normies…</span>
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <h2 className="text-xs font-mono text-n-muted uppercase tracking-widest">
+          upgraded normies
+          <span className="ml-2 text-n-faint">({sorted.length} of 10,000)</span>
+        </h2>
+        {latestBlock && scannedAt && (
+          <span className="text-xs font-mono text-n-faint">
+            block {latestBlock.toLocaleString()} · {new Date(scannedAt).toLocaleTimeString()}
+          </span>
         )}
       </div>
 
-      {cards.length === 0 && !loading && (
-        <p className="text-xs font-mono text-n-faint">no upgraded normies found</p>
-      )}
+      {sorted.length === 0 ? (
+        <p className="text-xs font-mono text-n-faint py-4">No customized normies found.</p>
+      ) : (
+        <>
+          <div className="grid grid-cols-5 sm:grid-cols-7 md:grid-cols-10 gap-1.5">
+            {sorted.map(({ id, level, type, editCount }) => (
+              <Link
+                key={id}
+                href={`/normie/${id}`}
+                title={`Normie #${id} · Level ${level} ${type}${editCount ? ` · ${editCount} edits` : ""}`}
+                className="relative aspect-square border border-n-border rounded overflow-hidden hover:border-n-text transition-colors group bg-n-bg"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={`${BASE}/normie/${id}/image.svg`}
+                  alt={`#${id}`}
+                  className="w-full h-full object-contain pixelated group-hover:scale-110 transition-transform duration-200"
+                  loading="lazy"
+                />
+                <TypeBadge type={type} />
+                <LevelBadge level={level} />
+                <EditCountBadge count={editCount} />
+              </Link>
+            ))}
+          </div>
 
-      <div className="grid grid-cols-6 sm:grid-cols-8 md:grid-cols-10 lg:grid-cols-12 gap-1">
-        {cards.map(({ id, level }) => (
-          <Link
-            key={id}
-            href={`/normie/${id}`}
-            title={`Normie #${id} · Level ${level}`}
-            className="relative aspect-square border border-n-border rounded overflow-hidden hover:border-n-text transition-colors group bg-n-bg"
-          >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={`https://api.normies.art/normie/${id}/image.svg`}
-              alt={`#${id}`}
-              className="w-full h-full object-contain pixelated group-hover:scale-105 transition-transform"
-              loading="lazy"
-            />
-            <LevelBadge level={level} />
-          </Link>
-        ))}
-      </div>
-
-      {cards.length > 0 && (
-        <p className="text-xs font-mono text-n-faint text-center">
-          showing {cards.length} upgraded normies · click any to explore its full history
-        </p>
+          <p className="text-xs font-mono text-n-faint text-center">
+            {sorted.length} normie{sorted.length !== 1 ? "s" : ""} have ever been transformed out of 10,000 ·{" "}
+            click any to explore its full on-chain history
+          </p>
+        </>
       )}
     </section>
   );
