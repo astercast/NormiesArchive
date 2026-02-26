@@ -1,18 +1,13 @@
 /**
  * NormiesCanvas event indexer — server-side only.
  *
- * Speed architecture:
- *  1. API routes use Next.js `revalidate` so Vercel CDN caches the response.
- *     Users always get the cached version (<50ms). Background revalidation
- *     runs silently every 5 minutes.
- *  2. The indexer itself keeps a module-level in-process cache so multiple
- *     concurrent requests on a warm Vercel instance share one scan.
- *  3. Scan is parallelised: all block chunks fetched concurrently (not serially).
- *     ~20 chunks → ~3-4s instead of 30s+.
- *  4. API detail calls (canvas/info + diff + traits) run in parallel batches
- *     of 15 per token, with a short sleep between batches to respect rate limits.
+ * Speed:
+ *  - Block chunks fetched in parallel (8 at a time), not serially
+ *  - API detail calls run in parallel batches of 15
+ *  - Module-level cache: one scan shared across all concurrent requests
+ *  - API routes use stale-while-revalidate so users never wait
  *
- * NormiesCanvas deployed: block 19,614,531 (Etherscan verified).
+ * NormiesCanvas deploy block: 19,614,531 (verified on Etherscan)
  */
 
 import { parseAbiItem } from "viem";
@@ -20,80 +15,71 @@ import { publicClient, CANVAS_ADDRESS } from "./viemClient";
 
 const BASE_API = "https://api.normies.art";
 export const CANVAS_DEPLOY_BLOCK = 19_614_531n;
-const CHUNK_SIZE = 20_000n; // Larger chunks = fewer RPC round-trips
-const PARALLEL_CHUNKS = 8;  // Fetch this many chunks concurrently
+const CHUNK_SIZE     = 20_000n;
+const PARALLEL_CHUNKS = 8;
+const CACHE_TTL_MS   = 5 * 60 * 1000; // 5 min
 
 export interface UpgradedNormie {
-  id: number;
-  level: number;
-  ap: number;
-  added: number;
-  removed: number;
-  type: string;
+  id:        number;
+  level:     number;
+  ap:        number;
+  added:     number;
+  removed:   number;
+  type:      string;
   editCount: number;
 }
 
 interface CacheEntry {
-  normies: UpgradedNormie[];
-  scannedAt: number;
+  normies:     UpgradedNormie[];
+  scannedAt:   number;
   latestBlock: number;
 }
 
-// Module-level cache — lives for the lifetime of the Vercel function instance
-let _cache: CacheEntry | null = null;
-let _scanPromise: Promise<CacheEntry> | null = null;
-const CACHE_TTL_MS = 5 * 60 * 1000; // 5 min
+let _cache:       CacheEntry | null           = null;
+let _scanPromise: Promise<CacheEntry> | null  = null;
 
-// ─── RPC scanning ────────────────────────────────────────────────────────────
+// ─── RPC scanning ─────────────────────────────────────────────────────────────
 
 const TRANSFORM_EVENT = parseAbiItem(
   "event PixelsTransformed(address indexed transformer, uint256 indexed tokenId, uint256 changeCount, uint256 newPixelCount)"
 );
 
-async function fetchChunk(from: bigint, to: bigint): Promise<Map<number, { editCount: number }>> {
-  const result = new Map<number, { editCount: number }>();
+async function fetchChunk(from: bigint, to: bigint): Promise<Map<number, number>> {
+  const counts = new Map<number, number>();
   try {
     const logs = await publicClient.getLogs({
       address: CANVAS_ADDRESS,
-      event: TRANSFORM_EVENT,
+      event:   TRANSFORM_EVENT,
       fromBlock: from,
-      toBlock: to,
+      toBlock:   to,
     });
     for (const log of logs) {
       const id = Number(log.args.tokenId);
-      const existing = result.get(id);
-      result.set(id, { editCount: (existing?.editCount ?? 0) + 1 });
+      counts.set(id, (counts.get(id) ?? 0) + 1);
     }
   } catch (err) {
-    // Log but don't fail — partial scan is better than total failure
     console.warn(`[indexer] chunk ${from}-${to} failed:`, (err as Error).message);
   }
-  return result;
+  return counts;
 }
 
-/**
- * Scan all PixelsTransformed events in parallel chunks.
- * Returns a map of tokenId → { editCount }
- */
-async function scanAllEvents(): Promise<Map<number, { editCount: number }>> {
+async function scanAllEvents(): Promise<Map<number, number>> {
   const latest = await publicClient.getBlockNumber();
 
-  // Build chunk list
-  const chunks: Array<{ from: bigint; to: bigint }> = [];
+  const chunks: Array<[bigint, bigint]> = [];
   for (let from = CANVAS_DEPLOY_BLOCK; from <= latest; from += CHUNK_SIZE) {
     const to = from + CHUNK_SIZE - 1n < latest ? from + CHUNK_SIZE - 1n : latest;
-    chunks.push({ from, to });
+    chunks.push([from, to]);
   }
 
-  // Fetch in parallel windows of PARALLEL_CHUNKS
-  const merged = new Map<number, { editCount: number }>();
+  const merged = new Map<number, number>(); // tokenId → editCount
+
   for (let i = 0; i < chunks.length; i += PARALLEL_CHUNKS) {
     const window = chunks.slice(i, i + PARALLEL_CHUNKS);
-    const results = await Promise.all(window.map(c => fetchChunk(c.from, c.to)));
+    const results = await Promise.all(window.map(([f, t]) => fetchChunk(f, t)));
     for (const chunkMap of results) {
-      for (const [id, data] of chunkMap) {
-        const existing = merged.get(id);
-        merged.set(id, { editCount: (existing?.editCount ?? 0) + data.editCount });
+      for (const [id, count] of chunkMap) {
+        merged.set(id, (merged.get(id) ?? 0) + count);
       }
     }
   }
@@ -101,7 +87,7 @@ async function scanAllEvents(): Promise<Map<number, { editCount: number }>> {
   return merged;
 }
 
-// ─── API detail fetching ─────────────────────────────────────────────────────
+// ─── API detail fetching ──────────────────────────────────────────────────────
 
 async function fetchNormieDetails(id: number, editCount: number): Promise<UpgradedNormie | null> {
   try {
@@ -113,7 +99,7 @@ async function fetchNormieDetails(id: number, editCount: number): Promise<Upgrad
 
     if (!infoRes.ok) return null;
     const info = await infoRes.json();
-    if (!info.customized) return null; // sanity check
+    if (!info.customized) return null;
 
     const diff   = diffRes.ok   ? await diffRes.json()   : { addedCount: 0, removedCount: 0 };
     const traits = traitsRes.ok ? await traitsRes.json() : { attributes: [] };
@@ -134,18 +120,17 @@ async function fetchNormieDetails(id: number, editCount: number): Promise<Upgrad
   }
 }
 
-async function fetchAllDetails(tokenMap: Map<number, { editCount: number }>): Promise<UpgradedNormie[]> {
-  const ids = [...tokenMap.keys()];
+async function fetchAllDetails(tokenMap: Map<number, number>): Promise<UpgradedNormie[]> {
+  const ids     = [...tokenMap.keys()];
   const normies: UpgradedNormie[] = [];
-  const BATCH = 15; // Max parallel API calls per batch
+  const BATCH   = 15;
 
   for (let i = 0; i < ids.length; i += BATCH) {
-    const batch = ids.slice(i, i + BATCH);
+    const batch   = ids.slice(i, i + BATCH);
     const results = await Promise.all(
-      batch.map(id => fetchNormieDetails(id, tokenMap.get(id)!.editCount))
+      batch.map(id => fetchNormieDetails(id, tokenMap.get(id)!))
     );
     for (const r of results) { if (r) normies.push(r); }
-    // Polite pause between batches (API rate limit: 60 req/min)
     if (i + BATCH < ids.length) await new Promise(r => setTimeout(r, 200));
   }
 
@@ -159,7 +144,7 @@ async function doFullScan(): Promise<CacheEntry> {
   const t0 = Date.now();
 
   const tokenMap = await scanAllEvents();
-  console.log(`[indexer] Found ${tokenMap.size} transformed tokens in ${Date.now() - t0}ms`);
+  console.log(`[indexer] ${tokenMap.size} unique transformed tokens in ${Date.now() - t0}ms`);
 
   const normies = await fetchAllDetails(tokenMap);
   normies.sort((a, b) => b.level - a.level || b.ap - a.ap);
@@ -169,8 +154,7 @@ async function doFullScan(): Promise<CacheEntry> {
     scannedAt:   Date.now(),
     latestBlock: Number(await publicClient.getBlockNumber()),
   };
-
-  console.log(`[indexer] Scan complete: ${normies.length} customized in ${Date.now() - t0}ms`);
+  console.log(`[indexer] Done: ${normies.length} customized normies in ${Date.now() - t0}ms`);
   return entry;
 }
 
@@ -179,29 +163,30 @@ async function doFullScan(): Promise<CacheEntry> {
 export async function getUpgradedNormies(): Promise<CacheEntry & { fromCache: boolean }> {
   const now = Date.now();
 
-  // Fresh cache: return immediately
+  // Fresh cache — return immediately
   if (_cache && now - _cache.scannedAt < CACHE_TTL_MS) {
     return { ..._cache, fromCache: true };
   }
 
-  // Stale/empty cache: run or join an in-flight scan
+  // Kick off background scan if not already running
   if (!_scanPromise) {
     _scanPromise = doFullScan()
       .then(entry => { _cache = entry; return entry; })
       .finally(() => { _scanPromise = null; });
   }
 
-  // If we have stale data, return it immediately and let the scan update in background
-  if (_cache) {
-    // Background refresh already kicked off above — serve stale immediately
-    return { ..._cache, fromCache: true };
-  }
+  // Stale cache — return immediately, scan updates in background
+  if (_cache) return { ..._cache, fromCache: true };
 
-  // No cache at all — must wait for first scan
+  // No cache at all — must wait
   const entry = await _scanPromise;
   return { ...entry, fromCache: false };
 }
 
+/**
+ * Returns everything needed for both the leaderboard page
+ * and the homepage (spotlight + explore grid).
+ */
 export async function getLeaderboards() {
   const { normies, scannedAt, latestBlock } = await getUpgradedNormies();
 
@@ -209,8 +194,23 @@ export async function getLeaderboards() {
   const highestLevel = [...normies].sort((a, b) => b.level - a.level || b.ap - a.ap);
 
   return {
-    mostEdited:      mostEdited.slice(0, 50).map(n => ({ tokenId: n.id, value: n.editCount, label: "edits",    type: n.type })),
-    highestLevel:    highestLevel.slice(0, 50).map(n => ({ tokenId: n.id, value: n.level,   label: "level",    type: n.type })),
+    // Full list sorted by level — used by homepage explore grid + spotlight
+    all: normies.map(n => ({
+      tokenId:   n.id,
+      level:     n.level,
+      ap:        n.ap,
+      added:     n.added,
+      removed:   n.removed,
+      type:      n.type,
+      editCount: n.editCount,
+    })),
+    // Leaderboard tabs
+    mostEdited:   mostEdited.slice(0, 50).map(n => ({
+      tokenId: n.id, value: n.editCount, label: "edits", type: n.type,
+    })),
+    highestLevel: highestLevel.slice(0, 50).map(n => ({
+      tokenId: n.id, value: n.level,     label: "level", type: n.type,
+    })),
     totalCustomized: normies.length,
     scannedAt,
     latestBlock,
