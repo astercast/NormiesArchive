@@ -1,0 +1,87 @@
+@import "tailwindcss";
+
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Sans:wght@400;500;600&display=swap");
+
+:root {
+  --bg:       #e3e5e4;   /* normies off-pixel / page background */
+  --surface:  #d6d8d7;   /* slightly darker surface */
+  --border:   #c2c4c3;   /* subtle borders */
+  --text:     #48494b;   /* normies on-pixel / primary text */
+  --muted:    #82848a;   /* secondary text */
+  --faint:    #b8bab9;   /* disabled / placeholder */
+  --accent:   #48494b;   /* same as text — monochrome accent */
+  --white:    #f5f5f4;   /* near-white panels */
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: "IBM Plex Mono", monospace;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+  min-height: 100vh;
+}
+
+/* Subtle scanline texture */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 3px,
+    rgba(72,73,75,0.012) 3px,
+    rgba(72,73,75,0.012) 4px
+  );
+  pointer-events: none;
+  z-index: 9999;
+}
+
+.font-display { font-family: "IBM Plex Mono", monospace; }
+.font-body    { font-family: "IBM Plex Sans", sans-serif; }
+
+/* Pixel-perfect image rendering */
+.pixelated {
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar        { width: 4px; height: 4px; }
+::-webkit-scrollbar-track  { background: var(--bg); }
+::-webkit-scrollbar-thumb  { background: var(--border); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+
+/* Animations */
+@keyframes blink    { 0%,100% { opacity:1 } 50% { opacity:0 } }
+@keyframes fade-in  { from { opacity:0; transform:translateY(6px) } to { opacity:1; transform:translateY(0) } }
+@keyframes slide-in { from { opacity:0; transform:translateX(-8px) } to { opacity:1; transform:translateX(0) } }
+
+.animate-blink    { animation: blink 1s step-end infinite; }
+.animate-fade-in  { animation: fade-in 0.3s ease forwards; }
+.animate-slide-in { animation: slide-in 0.3s ease forwards; }
+
+/* Tag / badge base */
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.15rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  font-size: 0.7rem;
+  font-family: "IBM Plex Mono", monospace;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  background: transparent;
+}
+
+.tag-active {
+  color: var(--text);
+  border-color: var(--text);
+  background: rgba(72,73,75,0.06);
+}
