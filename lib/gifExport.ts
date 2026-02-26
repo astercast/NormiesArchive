@@ -77,7 +77,7 @@ export async function exportTimelineGif(
       ctx.font = `bold ${Math.max(5, scale - 1)}px monospace`;
       ctx.fillStyle = "rgba(72,73,75,0.5)";
       ctx.textAlign = "right";
-      ctx.fillText("normies.art/eternal", size - 2, size - 2);
+      ctx.fillText("normies-pixel-archive.vercel.app", size - 2, size - 2);
       ctx.textAlign = "left";
       ctx.fillText(`#${tokenId}`, 2, scale + 1);
 
@@ -88,7 +88,7 @@ export async function exportTimelineGif(
 
     await new Promise<void>((resolve, reject) => {
       gif.on("finished", (blob: Blob) => {
-        downloadBlob(blob, `normie-${tokenId}-eternal.gif`);
+        downloadBlob(blob, `normie-${tokenId}-history.gif`);
         onProgress?.(1);
         resolve();
       });
@@ -120,7 +120,7 @@ async function exportCurrentFrameAsPng(
   ctx.font = `bold ${scale}px monospace`;
   ctx.fillStyle = "rgba(72,73,75,0.4)";
   ctx.textAlign = "right";
-  ctx.fillText("normies.art/eternal", size - 4, size - 4);
+  ctx.fillText("normies-pixel-archive.vercel.app", size - 4, size - 4);
 
   await new Promise<void>((resolve) => {
     canvas.toBlob((blob) => {

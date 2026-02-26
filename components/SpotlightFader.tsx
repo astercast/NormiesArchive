@@ -29,11 +29,10 @@ export default function SpotlightFader() {
   const timerRef                = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
-    fetch("/api/upgraded")
+    fetch("/api/upgraded", { next: { revalidate: 300 } } as RequestInit)
       .then(r => r.json())
       .then(d => {
         if (d.upgraded?.length) {
-          // Only show normies with meaningful changes for the spotlight
           const spotlight = (d.upgraded as UpgradedNormie[])
             .filter(n => n.level >= 2)
             .sort((a, b) => b.level - a.level);

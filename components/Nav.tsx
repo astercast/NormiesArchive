@@ -1,14 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { Search } from "lucide-react";
 
 export default function Nav() {
   const pathname = usePathname();
-  const router = useRouter();
+  const router   = useRouter();
   const [query, setQuery] = useState("");
 
   const handleSearch = (e: React.FormEvent) => {
@@ -25,22 +24,21 @@ export default function Nav() {
       <div className="max-w-6xl mx-auto px-4 h-12 flex items-center justify-between gap-6">
         {/* Logo */}
         <Link href="/" className="flex items-center gap-2 flex-shrink-0 group">
-          {/* Mini 4×4 normie-style pixel grid */}
           <div className="grid grid-cols-4 gap-px w-5 h-5 flex-shrink-0">
             {[1,0,0,1, 0,1,1,0, 0,1,1,0, 1,0,0,1].map((on, i) => (
               <div key={i} className={`w-full h-full ${on ? "bg-n-text" : "bg-n-border"}`} />
             ))}
           </div>
           <span className="text-sm font-mono font-medium tracking-wide text-n-text group-hover:text-n-muted transition-colors">
-            eternal archive
+            pixel archive
           </span>
         </Link>
 
         {/* Center links */}
         <div className="hidden md:flex items-center gap-5 text-xs font-mono">
           {[
-            { href: "/", label: "home" },
-            { href: "/leaderboards", label: "leaderboards" },
+            { href: "/",            label: "home" },
+            { href: "/leaderboard", label: "leaderboard" },
           ].map((link) => (
             <Link
               key={link.href}

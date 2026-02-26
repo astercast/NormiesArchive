@@ -4,10 +4,10 @@ import Providers from "./providers";
 import Nav from "@/components/Nav";
 
 export const metadata: Metadata = {
-  title: { default: "Normie Eternal Archive", template: "%s — Normie Eternal Archive" },
+  title: { default: "Normies Pixel Archive", template: "%s — Normies Pixel Archive" },
   description: "The complete pixel evolution history of every Normie. 10,000 on-chain 40×40 monochrome faces.",
   openGraph: {
-    siteName: "Normie Eternal Archive",
+    siteName: "Normies Pixel Archive",
     type: "website",
   },
 };

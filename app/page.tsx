@@ -16,8 +16,8 @@ export default function HomePage() {
 
         <div className="space-y-1">
           <h1 className="text-5xl sm:text-6xl md:text-7xl font-mono font-medium tracking-tight text-n-text leading-none">
-            normie<br />
-            <span className="text-n-muted">eternal</span><br />
+            normies<br />
+            <span className="text-n-muted">pixel</span><br />
             archive
           </h1>
         </div>
@@ -27,18 +27,18 @@ export default function HomePage() {
         </p>
 
         <div className="flex items-center gap-3">
-          <Link href="/leaderboards"
+          <Link href="/leaderboard"
             className="inline-flex items-center gap-2 px-4 py-2 border border-n-border text-xs font-mono text-n-muted hover:text-n-text hover:border-n-text transition-colors rounded">
             <Trophy className="w-3.5 h-3.5" />
-            leaderboards
+            leaderboard
           </Link>
         </div>
       </section>
 
-      {/* Spotlight — client component, fades between upgraded normies */}
+      {/* Spotlight */}
       <SpotlightFader />
 
-      {/* Explore grid — only upgraded normies with level badges */}
+      {/* Explore grid */}
       <ExploreGrid />
 
     </div>
