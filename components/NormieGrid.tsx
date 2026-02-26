@@ -1,24 +1,23 @@
 "use client";
 
 import { useEffect, useRef, memo } from "react";
-import { renderToCanvas, renderHeatmap, diffToHeatmapData, GRID_SIZE } from "@/lib/pixelUtils";
+import { renderToCanvas, GRID_SIZE } from "@/lib/pixelUtils";
 
 interface NormieGridProps {
   pixelsStr: string;
   scale?: number;
-  showHeatmap?: boolean;
+  className?: string;
+  // Optional highlight sets for current-step diff overlay
   addedIndices?: number[];
   removedIndices?: number[];
-  className?: string;
 }
 
 const NormieGrid = memo(function NormieGrid({
   pixelsStr,
   scale = 10,
-  showHeatmap = false,
+  className = "",
   addedIndices,
   removedIndices,
-  className = "",
 }: NormieGridProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const size = GRID_SIZE * scale;
@@ -29,21 +28,11 @@ const NormieGrid = memo(function NormieGrid({
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    const addedSet = addedIndices ? new Set(addedIndices) : undefined;
+    const addedSet   = addedIndices   ? new Set(addedIndices)   : undefined;
     const removedSet = removedIndices ? new Set(removedIndices) : undefined;
 
     renderToCanvas(ctx, pixelsStr, scale, addedSet, removedSet);
-
-    if (showHeatmap && (addedIndices?.length || removedIndices?.length)) {
-      // Convert flat indices back to {x,y} for heatmap
-      const toCoords = (arr: number[]) => arr.map(i => ({ x: i % GRID_SIZE, y: Math.floor(i / GRID_SIZE) }));
-      const heatData = diffToHeatmapData(
-        toCoords(addedIndices || []),
-        toCoords(removedIndices || [])
-      );
-      renderHeatmap(ctx, heatData, scale);
-    }
-  }, [pixelsStr, scale, showHeatmap, addedIndices, removedIndices]);
+  }, [pixelsStr, scale, addedIndices, removedIndices]);
 
   return (
     <canvas

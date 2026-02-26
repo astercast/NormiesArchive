@@ -3,13 +3,12 @@
 import { useQuery } from "@tanstack/react-query";
 import {
   getNormieOriginalPixels, getNormieCurrentPixels, getNormieDiff,
-  getNormieInfo, getNormieTraits, getNormieMetadata, normalizeId,
+  getNormieInfo, getNormieTraits, normalizeId,
 } from "@/lib/normiesApi";
 import { getEditHistory, getBurnHistory } from "@/lib/eventIndexer";
-import { buildSimulatedFrames, coordsToIndices } from "@/lib/pixelUtils";
+import { buildSimulatedFrames, buildCumulativeHeatmap, coordsToIndices, PIXEL_COUNT } from "@/lib/pixelUtils";
 
 export function useNormieHistory(tokenId: number) {
-  // API uses 0-indexed IDs
   const nid = normalizeId(tokenId);
   const enabled = tokenId >= 0 && tokenId <= 9999;
 
@@ -18,6 +17,7 @@ export function useNormieHistory(tokenId: number) {
     queryFn: () => getNormieOriginalPixels(nid),
     enabled,
     staleTime: Infinity,
+    retry: 3,
   });
 
   const currentPixels = useQuery({
@@ -25,6 +25,7 @@ export function useNormieHistory(tokenId: number) {
     queryFn: () => getNormieCurrentPixels(nid),
     enabled,
     staleTime: 60_000,
+    retry: 3,
   });
 
   const diff = useQuery({
@@ -32,6 +33,7 @@ export function useNormieHistory(tokenId: number) {
     queryFn: () => getNormieDiff(nid),
     enabled,
     staleTime: 60_000,
+    retry: 2,
   });
 
   const info = useQuery({
@@ -39,6 +41,7 @@ export function useNormieHistory(tokenId: number) {
     queryFn: () => getNormieInfo(nid),
     enabled,
     staleTime: 60_000,
+    retry: 2,
   });
 
   const traits = useQuery({
@@ -46,13 +49,7 @@ export function useNormieHistory(tokenId: number) {
     queryFn: () => getNormieTraits(nid),
     enabled,
     staleTime: Infinity,
-  });
-
-  const metadata = useQuery({
-    queryKey: ["normie", nid, "metadata"],
-    queryFn: () => getNormieMetadata(nid),
-    enabled,
-    staleTime: Infinity,
+    retry: 2,
   });
 
   const editHistory = useQuery({
@@ -71,29 +68,38 @@ export function useNormieHistory(tokenId: number) {
     retry: 2,
   });
 
-  // Build simulated frames once all data available
+  // Build animation frames once all pixel data + history is ready
   const frames = useQuery({
     queryKey: ["normie", nid, "frames"],
-    queryFn: () => {
-      const original = originalPixels.data!;
-      const current = currentPixels.data!;
-      const history = editHistory.data!;
-      return buildSimulatedFrames(original, current, history);
-    },
+    queryFn: () => buildSimulatedFrames(
+      originalPixels.data!,
+      currentPixels.data!,
+      editHistory.data!
+    ),
     enabled: !!(originalPixels.data && currentPixels.data && editHistory.data),
     staleTime: Infinity,
   });
 
-  // Convert {x,y} diff objects to flat index arrays for canvas rendering
+  // Build cumulative heatmap across all edit frames (shows every pixel ever touched)
+  const heatmapData = useQuery({
+    queryKey: ["normie", nid, "heatmap"],
+    queryFn: () => {
+      const f = frames.data!;
+      if (f.length < 2) return new Float32Array(PIXEL_COUNT);
+      return buildCumulativeHeatmap(f);
+    },
+    enabled: !!(frames.data && frames.data.length >= 2),
+    staleTime: Infinity,
+  });
+
+  // Diff coords → flat indices for particle system
   const diffAsIndices = diff.data ? {
-    added: coordsToIndices(diff.data.added),
+    added:   coordsToIndices(diff.data.added),
     removed: coordsToIndices(diff.data.removed),
   } : null;
 
-  const isLoading =
-    originalPixels.isLoading ||
-    currentPixels.isLoading ||
-    info.isLoading;
+  const isLoading = originalPixels.isLoading || currentPixels.isLoading || info.isLoading;
+  const hasError  = originalPixels.isError || currentPixels.isError;
 
   // Derive type from traits
   const normieType = traits.data?.attributes.find(a => a.trait_type === "Type")?.value as string | undefined;
@@ -101,23 +107,24 @@ export function useNormieHistory(tokenId: number) {
   const lifeStory = buildLifeStory(
     tokenId,
     normieType,
-    editHistory.data || [],
-    burnHistory.data || [],
-    info.data?.level || 1
+    editHistory.data ?? [],
+    burnHistory.data ?? [],
+    info.data?.level ?? 1
   );
 
   return {
     originalPixels: originalPixels.data,
-    currentPixels: currentPixels.data,
-    diff: diff.data,
+    currentPixels:  currentPixels.data,
+    diff:           diff.data,
     diffAsIndices,
-    info: info.data,
-    traits: traits.data,
-    metadata: metadata.data,
-    editHistory: editHistory.data || [],
-    burnHistory: burnHistory.data || [],
-    frames: frames.data || [],
+    heatmapData:    heatmapData.data,
+    info:           info.data,
+    traits:         traits.data,
+    editHistory:    editHistory.data ?? [],
+    burnHistory:    burnHistory.data ?? [],
+    frames:         frames.data ?? [],
     isLoading,
+    hasError,
     lifeStory,
     normieType,
   };
@@ -130,25 +137,24 @@ function buildLifeStory(
   burns: Array<{ timestamp: number; owner: string; totalActions: number }>,
   level: number
 ): string[] {
-  const typeLabel = normieType ? `${normieType} Normie` : `Normie`;
-  const events: Array<{ timestamp: number; text: string }> = [];
-
+  const typeLabel = normieType ? `${normieType} Normie` : "Normie";
   if (edits.length === 0 && burns.length === 0) {
     return [`Normie #${tokenId} has never been touched. An untouched original, pristine from the mint.`];
   }
+
+  const events: Array<{ timestamp: number; text: string }> = [];
 
   if (edits.length > 0) {
     events.push({
       timestamp: edits[0].timestamp,
       text: `On ${formatDate(edits[0].timestamp)}, this ${typeLabel} received its first transformation from ${shortenAddr(edits[0].transformer)}, changing ${edits[0].changeCount} pixels forever.`,
     });
-  }
-
-  for (const edit of edits.slice(1)) {
-    events.push({
-      timestamp: edit.timestamp,
-      text: `${shortenAddr(edit.transformer)} reshaped ${edit.changeCount} pixel${edit.changeCount !== 1 ? "s" : ""} on ${formatDate(edit.timestamp)}. Total pixels: ${edit.newPixelCount}.`,
-    });
+    for (const edit of edits.slice(1)) {
+      events.push({
+        timestamp: edit.timestamp,
+        text: `${shortenAddr(edit.transformer)} reshaped ${edit.changeCount} pixel${edit.changeCount !== 1 ? "s" : ""} on ${formatDate(edit.timestamp)}. Running total: ${edit.newPixelCount}px.`,
+      });
+    }
   }
 
   for (const burn of burns) {
@@ -165,7 +171,7 @@ function buildLifeStory(
     });
   }
 
-  return events.sort((a, b) => a.timestamp - b.timestamp).map((e) => e.text);
+  return events.sort((a, b) => a.timestamp - b.timestamp).map(e => e.text);
 }
 
 function formatDate(ts: number): string {

@@ -1,18 +1,18 @@
 "use client";
 
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import {
   ArrowLeft, ArrowRight, Download, Share2,
-  Eye, EyeOff, Play, Pause, ExternalLink, Volume2, VolumeX, Loader2
+  Eye, EyeOff, Play, Pause, ExternalLink, Volume2, VolumeX, Loader2, AlertCircle
 } from "lucide-react";
 import { useNormieHistory } from "@/hooks/useNormieHistory";
 import NormieGrid from "@/components/NormieGrid";
 import TimelineScrubber from "@/components/TimelineScrubber";
 import HeatmapOverlay from "@/components/HeatmapOverlay";
 import ParticleCanvas from "@/components/ParticleCanvas";
-import { GRID_SIZE, diffStrings } from "@/lib/pixelUtils";
+import { GRID_SIZE, diffStrings, PIXEL_COUNT } from "@/lib/pixelUtils";
 import {
   playPixelBirth, playPixelDeath, playLevelUp,
   playScrubTick, setSoundEnabled
@@ -20,29 +20,36 @@ import {
 
 interface Props { tokenId: number }
 const SCALE = 10;
+const PLAY_INTERVAL_MS = 400; // Snappy animation
 
 export default function NormieDetailClient({ tokenId }: Props) {
   const {
     originalPixels, currentPixels, frames, info, traits,
-    editHistory, burnHistory, diffAsIndices, isLoading, lifeStory, normieType,
+    editHistory, burnHistory, diffAsIndices, heatmapData,
+    isLoading, hasError, lifeStory, normieType,
   } = useNormieHistory(tokenId);
 
-  const [step, setStep] = useState(0);
-  const [showHeatmap, setShowHeatmap] = useState(false);
+  const [step, setStep]                 = useState(0);
+  const [showHeatmap, setShowHeatmap]   = useState(false);
   const [showParticles, setShowParticles] = useState(true);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [soundOn, setSoundOn] = useState(false); // off by default (less jarring)
-  const [isExporting, setIsExporting] = useState(false);
-  const [exportPct, setExportPct] = useState(0);
-  const [copied, setCopied] = useState(false);
-  const [particles, setParticles] = useState<{ added: number[]; removed: number[] }>({ added: [], removed: [] });
+  const [isPlaying, setIsPlaying]       = useState(false);
+  const [soundOn, setSoundOn]           = useState(false);
+  const [isExporting, setIsExporting]   = useState(false);
+  const [exportPct, setExportPct]       = useState(0);
+  const [copied, setCopied]             = useState(false);
+  const [particles, setParticles]       = useState<{ added: number[]; removed: number[] }>({ added: [], removed: [] });
 
-  const playRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const playRef     = useRef<ReturnType<typeof setInterval> | null>(null);
   const prevStepRef = useRef(0);
-  const maxStep = Math.max(0, frames.length - 1);
-  const currentFrame = frames[step] || currentPixels || originalPixels || "";
 
-  // Level-up sound
+  const maxStep    = Math.max(0, frames.length - 1);
+  const currentFrame = frames[step] ?? currentPixels ?? originalPixels ?? "";
+
+  // Stable empty heatmap for when data isn't ready
+  const emptyHeat = useMemo(() => new Float32Array(PIXEL_COUNT), []);
+  const activeHeatmap = showHeatmap ? (heatmapData ?? emptyHeat) : emptyHeat;
+
+  // Level-up sound on mount if high level
   useEffect(() => {
     if (soundOn && (info?.level ?? 0) >= 50) {
       const t = setTimeout(() => playLevelUp(), 1000);
@@ -52,33 +59,36 @@ export default function NormieDetailClient({ tokenId }: Props) {
 
   const stopPlay = useCallback(() => {
     setIsPlaying(false);
-    if (playRef.current) clearInterval(playRef.current);
+    if (playRef.current) { clearInterval(playRef.current); playRef.current = null; }
   }, []);
 
   const startPlay = useCallback(() => {
     if (maxStep === 0) return;
+    if (isPlaying) stopPlay();
     setIsPlaying(true);
     playRef.current = setInterval(() => {
       setStep((prev) => {
         if (prev >= maxStep) { stopPlay(); return prev; }
         return prev + 1;
       });
-    }, 600);
-  }, [maxStep, stopPlay]);
+    }, PLAY_INTERVAL_MS);
+  }, [maxStep, isPlaying, stopPlay]);
 
   useEffect(() => () => { if (playRef.current) clearInterval(playRef.current); }, []);
 
-  // Particle + sound on step change
+  // Particles + sound on step change
   useEffect(() => {
-    if (!frames.length) return;
-    const prev = frames[prevStepRef.current] || "";
-    const next = frames[step] || "";
+    if (!frames.length || step === prevStepRef.current) return;
+    const prev = frames[prevStepRef.current] ?? "";
+    const next = frames[step] ?? "";
     if (prev && next && prev !== next) {
       const diff = diffStrings(prev, next);
-      setParticles(diff);
-      if (soundOn && showParticles) {
-        if (diff.added.length) playPixelBirth(Math.min(diff.added.length, 8));
-        if (diff.removed.length) playPixelDeath(Math.min(diff.removed.length, 8));
+      if (diff.added.length > 0 || diff.removed.length > 0) {
+        setParticles(diff);
+        if (soundOn && showParticles) {
+          if (diff.added.length)   playPixelBirth(Math.min(diff.added.length, 8));
+          if (diff.removed.length) playPixelDeath(Math.min(diff.removed.length, 8));
+        }
       }
     }
     prevStepRef.current = step;
@@ -98,12 +108,17 @@ export default function NormieDetailClient({ tokenId }: Props) {
 
   const handleExport = useCallback(async () => {
     if (!frames.length || isExporting) return;
-    setIsExporting(true); setExportPct(0);
+    setIsExporting(true);
+    setExportPct(0);
     try {
       const { exportTimelineGif } = await import("@/lib/gifExport");
       await exportTimelineGif(frames, tokenId, 8, setExportPct);
-    } catch (err) { console.error("Export failed", err); }
-    finally { setIsExporting(false); setExportPct(0); }
+    } catch (err) {
+      console.error("Export failed:", err);
+    } finally {
+      setIsExporting(false);
+      setExportPct(0);
+    }
   }, [frames, tokenId, isExporting]);
 
   const handleShare = useCallback(() => {
@@ -112,15 +127,16 @@ export default function NormieDetailClient({ tokenId }: Props) {
     setTimeout(() => setCopied(false), 2000);
   }, []);
 
-  // Get trait value from attributes array
+  // Derive display values
   const getAttribute = (key: string) =>
     traits?.attributes.find(a => a.trait_type === key)?.value;
 
-  const level = info?.level ?? (getAttribute("Level") as number | undefined) ?? 1;
-  const ap = info?.actionPoints ?? (getAttribute("Action Points") as number | undefined) ?? 0;
+  const level      = info?.level ?? (getAttribute("Level") as number | undefined) ?? 1;
+  const ap         = info?.actionPoints ?? (getAttribute("Action Points") as number | undefined) ?? 0;
   const customized = info?.customized ?? (getAttribute("Customized") === "Yes");
-  const type = normieType ?? (getAttribute("Type") as string | undefined);
+  const type       = normieType ?? (getAttribute("Type") as string | undefined);
 
+  // ── Loading state ───────────────────────────────────────────────────────────
   if (isLoading && !currentPixels) {
     return (
       <div className="max-w-6xl mx-auto px-4 py-10">
@@ -128,12 +144,16 @@ export default function NormieDetailClient({ tokenId }: Props) {
           <Link href="/" className="text-n-muted hover:text-n-text transition-colors">
             <ArrowLeft className="w-4 h-4" />
           </Link>
-          <div className="font-mono text-2xl text-n-faint animate-pulse">loading normie #{tokenId}…</div>
+          <span className="font-mono text-2xl text-n-faint flex items-center gap-2">
+            <Loader2 className="w-5 h-5 animate-spin" />
+            loading normie #{tokenId}…
+          </span>
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          <div className="bg-n-surface border border-n-border rounded" style={{ width: GRID_SIZE*SCALE, height: GRID_SIZE*SCALE, maxWidth:"100%" }} />
+          <div className="bg-n-surface border border-n-border rounded animate-pulse"
+               style={{ width: GRID_SIZE * SCALE, height: GRID_SIZE * SCALE, maxWidth: "100%" }} />
           <div className="space-y-2">
-            {Array.from({length:5}).map((_,i)=>(
+            {Array.from({ length: 5 }).map((_, i) => (
               <div key={i} className="h-12 bg-n-surface border border-n-border rounded animate-pulse" />
             ))}
           </div>
@@ -142,6 +162,25 @@ export default function NormieDetailClient({ tokenId }: Props) {
     );
   }
 
+  // ── Error state ─────────────────────────────────────────────────────────────
+  if (hasError && !currentPixels) {
+    return (
+      <div className="max-w-6xl mx-auto px-4 py-10">
+        <div className="flex items-center gap-3 mb-8">
+          <Link href="/" className="text-n-muted hover:text-n-text transition-colors">
+            <ArrowLeft className="w-4 h-4" />
+          </Link>
+          <h1 className="font-mono text-2xl font-medium text-n-text">normie #{tokenId}</h1>
+        </div>
+        <div className="flex items-center gap-3 text-n-muted font-mono text-sm border border-n-border rounded p-6">
+          <AlertCircle className="w-5 h-5 flex-shrink-0" />
+          <span>Could not load normie #{tokenId}. It may not exist or the API is temporarily unavailable.</span>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Main UI ─────────────────────────────────────────────────────────────────
   return (
     <div className="max-w-6xl mx-auto px-4 py-10 space-y-8">
 
@@ -150,38 +189,30 @@ export default function NormieDetailClient({ tokenId }: Props) {
         <Link href="/" className="text-n-muted hover:text-n-text transition-colors">
           <ArrowLeft className="w-4 h-4" />
         </Link>
-        <h1 className="font-mono text-2xl font-medium text-n-text">
-          normie #{tokenId}
-        </h1>
-        {type && (
-          <span className="tag">{type.toLowerCase()}</span>
-        )}
-        {customized && (
-          <span className="tag tag-active">customized</span>
-        )}
+        <h1 className="font-mono text-2xl font-medium text-n-text">normie #{tokenId}</h1>
+        {type       && <span className="tag">{type.toLowerCase()}</span>}
+        {customized && <span className="tag tag-active">customized</span>}
         <span className="tag tag-active">lvl {level}</span>
 
-        {/* Right: action buttons */}
         <div className="flex items-center gap-1.5 ml-auto">
           <button onClick={handleToggleSound} title={soundOn ? "mute" : "sound on"}
             className="p-1.5 border border-n-border text-n-muted rounded hover:text-n-text hover:border-n-text transition-colors">
-            {soundOn ? <Volume2 className="w-3.5 h-3.5"/> : <VolumeX className="w-3.5 h-3.5"/>}
+            {soundOn ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
           </button>
           <a href={`https://opensea.io/assets/ethereum/0x9Eb6E2025B64f340691e424b7fe7022fFDE12438/${tokenId}`}
             target="_blank" rel="noopener noreferrer"
             className="px-2.5 py-1.5 border border-n-border text-n-muted text-xs font-mono rounded hover:text-n-text hover:border-n-text transition-colors flex items-center gap-1">
-            <ExternalLink className="w-3 h-3"/> opensea
+            <ExternalLink className="w-3 h-3" /> opensea
           </a>
           <button onClick={handleShare}
             className="px-2.5 py-1.5 border border-n-border text-n-muted text-xs font-mono rounded hover:text-n-text hover:border-n-text transition-colors flex items-center gap-1">
-            <Share2 className="w-3 h-3"/> {copied ? "copied!" : "share"}
+            <Share2 className="w-3 h-3" /> {copied ? "copied!" : "share"}
           </button>
           <button onClick={handleExport} disabled={isExporting || frames.length === 0}
             className="px-2.5 py-1.5 bg-n-text text-n-bg text-xs font-mono rounded hover:opacity-80 transition-opacity disabled:opacity-40 flex items-center gap-1">
             {isExporting
-              ? <><Loader2 className="w-3 h-3 animate-spin"/> {Math.round(exportPct*100)}%</>
-              : <><Download className="w-3 h-3"/> export gif</>
-            }
+              ? <><Loader2 className="w-3 h-3 animate-spin" /> {Math.round(exportPct * 100)}%</>
+              : <><Download className="w-3 h-3" /> export gif</>}
           </button>
         </div>
       </div>
@@ -190,10 +221,10 @@ export default function NormieDetailClient({ tokenId }: Props) {
       {info && (
         <div className="grid grid-cols-4 gap-px bg-n-border">
           {[
-            { label: "level", value: level },
-            { label: "action pts", value: ap },
-            { label: "edits", value: editHistory.length },
-            { label: "px net diff", value: (diffAsIndices?.added.length ?? 0) + (diffAsIndices?.removed.length ?? 0) },
+            { label: "level",       value: level },
+            { label: "action pts",  value: ap },
+            { label: "edits",       value: editHistory.length },
+            { label: "px changed",  value: (diffAsIndices?.added.length ?? 0) + (diffAsIndices?.removed.length ?? 0) },
           ].map(({ label, value }) => (
             <div key={label} className="bg-n-bg px-4 py-3">
               <div className="text-xs font-mono text-n-muted">{label}</div>
@@ -208,25 +239,23 @@ export default function NormieDetailClient({ tokenId }: Props) {
 
         {/* Left: Canvas */}
         <div className="space-y-3">
-          {/* Pixel canvas wrapper */}
-          <div className="relative border border-n-border rounded overflow-hidden inline-block"
-               style={{ width: GRID_SIZE*SCALE, height: GRID_SIZE*SCALE, maxWidth: "100%" }}>
+          <div
+            className="relative border border-n-border rounded overflow-hidden inline-block"
+            style={{ width: GRID_SIZE * SCALE, height: GRID_SIZE * SCALE, maxWidth: "100%" }}
+          >
             {currentFrame && (
               <NormieGrid
                 pixelsStr={currentFrame}
                 scale={SCALE}
-                showHeatmap={showHeatmap}
-                addedIndices={showHeatmap ? (diffAsIndices?.added ?? []) : undefined}
-                removedIndices={showHeatmap ? (diffAsIndices?.removed ?? []) : undefined}
               />
             )}
-            {showHeatmap && diffAsIndices && (
-              <HeatmapOverlay
-                addedIndices={diffAsIndices.added}
-                removedIndices={diffAsIndices.removed}
-                scale={SCALE}
-              />
+
+            {/* Heatmap overlay — uses cumulative Float32Array */}
+            {showHeatmap && heatmapData && (
+              <HeatmapOverlay heatData={activeHeatmap} scale={SCALE} />
             )}
+
+            {/* Particle system */}
             {showParticles && (
               <ParticleCanvas
                 addedPixels={particles.added}
@@ -234,8 +263,9 @@ export default function NormieDetailClient({ tokenId }: Props) {
                 active={particles.added.length > 0 || particles.removed.length > 0}
               />
             )}
+
             {/* Step badge */}
-            <div className="absolute top-1.5 left-1.5 px-1.5 py-0.5 bg-n-bg/80 border border-n-border text-xs font-mono text-n-muted rounded">
+            <div className="absolute top-1.5 left-1.5 px-1.5 py-0.5 bg-n-bg/80 border border-n-border text-xs font-mono text-n-muted rounded backdrop-blur-sm">
               {step === 0 ? "origin" : step === maxStep ? "current" : `edit ${step}`}
             </div>
           </div>
@@ -244,21 +274,25 @@ export default function NormieDetailClient({ tokenId }: Props) {
           <div className="flex flex-wrap gap-1.5">
             <button onClick={() => setShowHeatmap(!showHeatmap)}
               className={`flex items-center gap-1 px-2.5 py-1 border text-xs font-mono rounded transition-colors ${
-                showHeatmap ? "border-n-text text-n-text bg-n-surface" : "border-n-border text-n-muted hover:border-n-muted"
+                showHeatmap
+                  ? "border-n-text text-n-text bg-n-surface"
+                  : "border-n-border text-n-muted hover:border-n-muted"
               }`}>
-              {showHeatmap ? <Eye className="w-3 h-3"/> : <EyeOff className="w-3 h-3"/>}
+              {showHeatmap ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
               heatmap
             </button>
             <button onClick={() => setShowParticles(!showParticles)}
               className={`flex items-center gap-1 px-2.5 py-1 border text-xs font-mono rounded transition-colors ${
-                showParticles ? "border-n-text text-n-text bg-n-surface" : "border-n-border text-n-muted hover:border-n-muted"
+                showParticles
+                  ? "border-n-text text-n-text bg-n-surface"
+                  : "border-n-border text-n-muted hover:border-n-muted"
               }`}>
               particles
             </button>
             {diffAsIndices && (
               <div className="flex items-center gap-2 px-2.5 py-1 border border-n-border rounded text-xs font-mono text-n-muted">
-                <span>+{diffAsIndices.added.length}</span>
-                <span>−{diffAsIndices.removed.length}</span>
+                <span className="text-green-700">+{diffAsIndices.added.length}</span>
+                <span className="text-red-700">−{diffAsIndices.removed.length}</span>
               </div>
             )}
           </div>
@@ -272,31 +306,39 @@ export default function NormieDetailClient({ tokenId }: Props) {
             <div className="flex items-center justify-between">
               <span className="text-xs font-mono text-n-muted uppercase tracking-wider">timeline</span>
               <div className="flex items-center gap-1.5">
-                <button onClick={() => handleStep(Math.max(0, step-1))} disabled={step===0}
+                <button onClick={() => handleStep(Math.max(0, step - 1))} disabled={step === 0}
                   className="p-1 border border-n-border rounded text-n-muted disabled:opacity-30 hover:text-n-text hover:border-n-text transition-colors">
-                  <ArrowLeft className="w-3 h-3"/>
+                  <ArrowLeft className="w-3 h-3" />
                 </button>
-                <button onClick={isPlaying ? stopPlay : startPlay} disabled={maxStep===0}
+                <button
+                  onClick={isPlaying ? stopPlay : startPlay}
+                  disabled={maxStep === 0}
                   className="flex items-center gap-1 px-2.5 py-1 border border-n-text text-n-text text-xs font-mono rounded hover:bg-n-text hover:text-n-bg transition-colors disabled:opacity-30">
-                  {isPlaying ? <><Pause className="w-3 h-3"/> pause</> : <><Play className="w-3 h-3"/> play</>}
+                  {isPlaying
+                    ? <><Pause className="w-3 h-3" /> pause</>
+                    : <><Play  className="w-3 h-3" /> play</>}
                 </button>
-                <button onClick={() => handleStep(Math.min(maxStep, step+1))} disabled={step===maxStep}
+                <button onClick={() => handleStep(Math.min(maxStep, step + 1))} disabled={step === maxStep}
                   className="p-1 border border-n-border rounded text-n-muted disabled:opacity-30 hover:text-n-text hover:border-n-text transition-colors">
-                  <ArrowRight className="w-3 h-3"/>
+                  <ArrowRight className="w-3 h-3" />
                 </button>
               </div>
             </div>
 
             {frames.length > 0 ? (
               <TimelineScrubber
-                value={step} max={maxStep}
+                value={step}
+                max={maxStep}
                 editHistory={editHistory}
                 onChange={handleStep}
               />
             ) : (
               <div className="text-xs font-mono text-n-faint text-center py-6">
                 {isLoading
-                  ? <span className="flex items-center justify-center gap-2"><Loader2 className="w-3.5 h-3.5 animate-spin"/>loading history…</span>
+                  ? <span className="flex items-center justify-center gap-2">
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      loading on-chain history…
+                    </span>
                   : "no edit history — pristine from mint"}
               </div>
             )}
@@ -311,17 +353,21 @@ export default function NormieDetailClient({ tokenId }: Props) {
               </div>
               <div className="divide-y divide-n-border max-h-56 overflow-y-auto">
                 {editHistory.map((edit, i) => (
-                  <motion.div key={edit.txHash}
+                  <motion.div
+                    key={edit.txHash}
                     initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.02 }}
                     onClick={() => handleStep(i + 1)}
-                    className={`px-4 py-2.5 flex items-center gap-3 cursor-pointer hover:bg-n-surface transition-colors ${step===i+1 ? "bg-n-surface border-l-2 border-n-text" : ""}`}>
-                    <span className="text-xs font-mono text-n-faint w-4 text-center">{i+1}</span>
+                    className={`px-4 py-2.5 flex items-center gap-3 cursor-pointer hover:bg-n-surface transition-colors ${
+                      step === i + 1 ? "bg-n-surface border-l-2 border-n-text" : ""
+                    }`}
+                  >
+                    <span className="text-xs font-mono text-n-faint w-4 text-center">{i + 1}</span>
                     <div className="flex-1 min-w-0">
                       <div className="text-xs font-mono text-n-text">
-                        {new Date(edit.timestamp*1000).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}
+                        {new Date(edit.timestamp * 1000).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
                       </div>
                       <div className="text-xs font-mono text-n-muted truncate">
-                        {edit.transformer.slice(0,10)}…{edit.transformer.slice(-4)}
+                        {edit.transformer.slice(0, 10)}…{edit.transformer.slice(-4)}
                       </div>
                     </div>
                     <div className="text-right flex-shrink-0">
@@ -332,7 +378,7 @@ export default function NormieDetailClient({ tokenId }: Props) {
                       target="_blank" rel="noopener noreferrer"
                       className="text-n-faint hover:text-n-muted transition-colors"
                       onClick={(e) => e.stopPropagation()}>
-                      <ExternalLink className="w-3 h-3"/>
+                      <ExternalLink className="w-3 h-3" />
                     </a>
                   </motion.div>
                 ))}
@@ -351,16 +397,37 @@ export default function NormieDetailClient({ tokenId }: Props) {
                   <div key={burn.txHash} className="px-4 py-2.5 flex items-center gap-3">
                     <div className="flex-1">
                       <div className="text-xs font-mono text-n-text">
-                        {new Date(burn.timestamp*1000).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}
+                        {new Date(burn.timestamp * 1000).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
                       </div>
-                      <div className="text-xs font-mono text-n-muted">{burn.owner.slice(0,10)}…{burn.owner.slice(-4)}</div>
+                      <div className="text-xs font-mono text-n-muted">
+                        {burn.owner.slice(0, 10)}…{burn.owner.slice(-4)}
+                      </div>
                     </div>
                     <div className="text-xs font-mono font-medium text-n-text">+{burn.totalActions} AP</div>
                     <a href={`https://etherscan.io/tx/${burn.txHash}`}
                       target="_blank" rel="noopener noreferrer"
                       className="text-n-faint hover:text-n-muted transition-colors">
-                      <ExternalLink className="w-3 h-3"/>
+                      <ExternalLink className="w-3 h-3" />
                     </a>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Traits */}
+          {traits && (
+            <div className="border border-n-border rounded overflow-hidden">
+              <div className="px-4 py-2.5 border-b border-n-border">
+                <span className="text-xs font-mono text-n-muted uppercase tracking-wider">traits</span>
+              </div>
+              <div className="grid grid-cols-2 gap-px bg-n-border">
+                {traits.attributes.map((attr) => (
+                  <div key={attr.trait_type} className="bg-n-bg px-3 py-2">
+                    <div className="text-xs font-mono text-n-faint">{attr.trait_type.toLowerCase()}</div>
+                    <div className="text-xs font-mono text-n-text font-medium">
+                      {String(attr.value)}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -387,23 +454,23 @@ export default function NormieDetailClient({ tokenId }: Props) {
         </section>
       )}
 
-      {/* Prev / Next navigation */}
+      {/* Prev / Next */}
       <div className="flex items-center justify-between pt-4 border-t border-n-border">
         {tokenId > 0 ? (
-          <Link href={`/normie/${tokenId-1}`}
+          <Link href={`/normie/${tokenId - 1}`}
             className="flex items-center gap-1.5 text-xs font-mono text-n-muted hover:text-n-text transition-colors">
-            <ArrowLeft className="w-3.5 h-3.5"/> #{tokenId-1}
+            <ArrowLeft className="w-3.5 h-3.5" /> #{tokenId - 1}
           </Link>
-        ) : <div/>}
+        ) : <div />}
         <Link href="/" className="text-xs font-mono text-n-faint hover:text-n-muted transition-colors">
           all normies
         </Link>
         {tokenId < 9999 ? (
-          <Link href={`/normie/${tokenId+1}`}
+          <Link href={`/normie/${tokenId + 1}`}
             className="flex items-center gap-1.5 text-xs font-mono text-n-muted hover:text-n-text transition-colors">
-            #{tokenId+1} <ArrowRight className="w-3.5 h-3.5"/>
+            #{tokenId + 1} <ArrowRight className="w-3.5 h-3.5" />
           </Link>
-        ) : <div/>}
+        ) : <div />}
       </div>
     </div>
   );
