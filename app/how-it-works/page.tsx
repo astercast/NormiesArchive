@@ -113,29 +113,10 @@ export default function HowItWorksPage() {
           level = floor(AP ÷ 10) + 1
         </div>
         <p className="text-sm font-mono text-n-muted leading-relaxed">
-          so 0 AP = Level 1, 10 AP = Level 2, 50 AP = Level 6, 100 AP = Level 11, and so on. there&apos;s no cap. level is purely cosmetic — it signals how much editing activity a Normie has accumulated over its lifetime.
+          so 0 AP = Level 1, 10 AP = Level 2, 50 AP = Level 6, 100 AP = Level 11, and so on. there&apos;s no cap. level signals how much editing activity a Normie has accumulated over its lifetime.
         </p>
 
-        {/* Level table */}
-        <div className="border border-n-border rounded overflow-hidden">
-          <div className="grid grid-cols-3 border-b border-n-border text-[10px] font-mono text-n-faint px-4 py-2 bg-n-surface">
-            <span>action points</span><span>level</span><span>what it means</span>
-          </div>
-          {[
-            [  "0",    "1", "untouched — pristine from mint"],
-            [ "1–9",   "1", "first edits, still level 1"],
-            ["10–19",  "2", "getting started"],
-            ["50–99",  "6–10", "serious commitment"],
-            ["100+",  "11+", "heavy hitter"],
-            ["500+",  "51+", "legendary"],
-          ].map(([ap, lvl, desc]) => (
-            <div key={ap} className="grid grid-cols-3 border-b border-n-border last:border-0 px-4 py-2 text-xs font-mono">
-              <span className="text-n-text">{ap}</span>
-              <span className="text-n-muted">{lvl}</span>
-              <span className="text-n-faint">{desc}</span>
-            </div>
-          ))}
-        </div>
+
       </Section>
 
       {/* ── PART 5: DELEGATES ── */}
@@ -144,7 +125,7 @@ export default function HowItWorksPage() {
           Normie owners can authorize a <strong className="text-n-text">delegate address</strong> to transform pixels on their behalf — without giving up ownership of the NFT. this is useful for cold wallet holders who want to edit from a hot wallet, or for collaborative projects where someone else manages the canvas.
         </p>
         <p className="text-sm font-mono text-n-muted leading-relaxed">
-          when a delegate is active, you&apos;ll see it displayed on the Normie&apos;s detail page as a banner with the authorized address.
+          when a delegate is active, you&apos;ll see it displayed on the Normie&apos;s detail page as a banner with the authorized address (here on the archive website).
         </p>
       </Section>
 
