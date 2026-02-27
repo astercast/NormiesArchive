@@ -40,44 +40,6 @@ function Step({ n, title, children }: { n: number; title: string; children: Reac
   );
 }
 
-function PixelGrid({ pattern, label }: { pattern: number[]; label: string }) {
-  return (
-    <div className="flex flex-col items-center gap-2">
-      <div
-        className="grid gap-px bg-n-border border border-n-border rounded"
-        style={{ gridTemplateColumns: "repeat(8, 1fr)", width: 72, height: 72 }}
-      >
-        {pattern.map((on, i) => (
-          <div key={i} className={on ? "bg-n-text" : "bg-n-bg"} />
-        ))}
-      </div>
-      <span className="text-[10px] font-mono text-n-faint">{label}</span>
-    </div>
-  );
-}
-
-const DEMO_ORIGINAL = [
-  1,1,0,0,0,0,1,1,
-  1,0,0,0,0,0,0,1,
-  0,0,1,0,0,1,0,0,
-  0,0,0,0,0,0,0,0,
-  0,0,0,1,1,0,0,0,
-  0,0,1,0,0,1,0,0,
-  1,0,0,0,0,0,0,1,
-  1,1,0,0,0,0,1,1,
-];
-const DEMO_TRANSFORM = [
-  0,0,0,0,0,0,0,0,
-  0,0,0,0,0,0,0,0,
-  0,0,0,0,0,0,0,0,
-  0,1,0,0,0,0,1,0,
-  0,1,0,0,0,0,1,0,
-  0,0,0,0,0,0,0,0,
-  0,0,0,0,0,0,0,0,
-  0,0,0,0,0,0,0,0,
-];
-const DEMO_FINAL = DEMO_ORIGINAL.map((v, i) => v ^ DEMO_TRANSFORM[i]);
-
 export default function HowItWorksPage() {
   return (
     <div className="max-w-2xl mx-auto px-4 py-12 space-y-14">
@@ -114,21 +76,6 @@ export default function HowItWorksPage() {
         <p className="text-sm font-mono text-n-muted leading-relaxed">
           the final displayed Normie is always: <code className="bg-n-surface px-1.5 py-0.5 rounded text-n-text">original XOR transform_layer</code>. every 1-bit in the transform layer flips the corresponding pixel. the original is never destroyed — it always exists underneath.
         </p>
-
-        {/* XOR demo */}
-        <div className="border border-n-border rounded p-5 bg-n-surface space-y-4">
-          <div className="text-xs font-mono text-n-muted">pixel transform — live example (8×8 demo)</div>
-          <div className="flex items-center gap-4 flex-wrap">
-            <PixelGrid pattern={DEMO_ORIGINAL}   label="original" />
-            <span className="text-lg font-mono text-n-faint">⊕</span>
-            <PixelGrid pattern={DEMO_TRANSFORM}  label="transform layer" />
-            <span className="text-lg font-mono text-n-faint">=</span>
-            <PixelGrid pattern={DEMO_FINAL}      label="final (displayed)" />
-          </div>
-          <p className="text-[10px] font-mono text-n-faint leading-relaxed">
-            pixels where the transform layer has a 1 get flipped. everything else stays the same.
-          </p>
-        </div>
       </Section>
 
       {/* ── PART 3: AP & BURNING ── */}
