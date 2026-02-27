@@ -172,9 +172,9 @@ const BASE_API = "https://api.normies.art";
 async function fetchNormieDetails(id: number, editCount: number): Promise<UpgradedNormie | null> {
   try {
     const [infoRes, diffRes, traitsRes] = await Promise.all([
-      fetch(`${BASE_API}/normie/${id}/canvas/info`, { cache: "no-store" }),
-      fetch(`${BASE_API}/normie/${id}/canvas/diff`,  { cache: "no-store" }),
-      fetch(`${BASE_API}/normie/${id}/traits`,        { next: { revalidate: 3600 } } as RequestInit),
+      fetchWithRetry(`${BASE_API}/normie/${id}/canvas/info`),
+      fetchWithRetry(`${BASE_API}/normie/${id}/canvas/diff`),
+      fetchWithRetry(`${BASE_API}/normie/${id}/traits`),
     ]);
     if (!infoRes.ok) return null;
     const info = await infoRes.json();
@@ -189,6 +189,17 @@ async function fetchNormieDetails(id: number, editCount: number): Promise<Upgrad
       editCount, type: String(type),
     };
   } catch { return null; }
+}
+
+async function fetchWithRetry(url: string, attempt = 0): Promise<Response> {
+  const res = await fetch(url, { cache: "no-store" });
+  if (res.status === 429 && attempt < 4) {
+    // Respect rate limit — back off then retry
+    const retryAfter = parseInt(res.headers.get("Retry-After") ?? "2", 10);
+    await new Promise(r => setTimeout(r, (retryAfter || 2) * 1000 * (attempt + 1)));
+    return fetchWithRetry(url, attempt + 1);
+  }
+  return res;
 }
 
 // ─── Full scan — no timestamp fetching ───────────────────────────────────────
@@ -244,14 +255,15 @@ async function doFullScan(): Promise<GlobalCache> {
   }
 
   // Fetch normie details for all customized tokens
+  // 3 requests per normie × 8 per batch = 24 req/batch, well under 60 req/min with 1.5s gap
   const allIds  = [...editCountByToken.keys()];
   const normies: UpgradedNormie[] = [];
-  const BATCH   = 15;
+  const BATCH   = 8;
   for (let i = 0; i < allIds.length; i += BATCH) {
     const batch   = allIds.slice(i, i + BATCH);
     const results = await Promise.all(batch.map(id => fetchNormieDetails(id, editCountByToken.get(id)!)));
     for (const r of results) { if (r) normies.push(r); }
-    if (i + BATCH < allIds.length) await new Promise(r => setTimeout(r, 200));
+    if (i + BATCH < allIds.length) await new Promise(r => setTimeout(r, 1500));
   }
   normies.sort((a, b) => b.level - a.level || b.ap - a.ap);
 
