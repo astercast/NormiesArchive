@@ -59,7 +59,7 @@ export default function LeaderboardClient() {
     if (silent) setRefreshing(true);
     else setLoading(true);
     try {
-      const res = await fetch(`/api/leaderboards?v=${Math.floor(Date.now() / 60000)}`);
+      const res = await fetch("/api/leaderboards");
       if (!res.ok) throw new Error("fetch failed");
       const d: LeaderboardData = await res.json();
       setData(d);

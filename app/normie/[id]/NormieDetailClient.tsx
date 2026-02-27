@@ -20,36 +20,38 @@ import {
 
 interface Props { tokenId: number }
 const SCALE = 10;
-const PLAY_INTERVAL_MS = 400;
+const PLAY_INTERVAL_MS = 400; // Snappy animation
 
 export default function NormieDetailClient({ tokenId }: Props) {
   const {
-    originalPixels, currentPixels, diff, diffAsIndices, heatmapData,
-    info, traits, editHistory, burnHistory, frames, isLoading, hasError, historyLoading, lifeStory, normieType,
+    originalPixels, currentPixels, frames, info, traits,
+    editHistory, burnHistory, diffAsIndices, heatmapData,
+    isLoading, hasError, lifeStory, normieType,
   } = useNormieHistory(tokenId);
 
-  const [step,           setStep]           = useState(0);
-  const [showHeatmap,    setShowHeatmap]    = useState(false);
-  const [showParticles,  setShowParticles]  = useState(true);
-  const [isPlaying,      setIsPlaying]      = useState(false);
-  const [soundOn,        setSoundOn]        = useState(false);
-  const [isExporting,    setIsExporting]    = useState(false);
-  const [exportPct,      setExportPct]      = useState(0);
-  const [copied,         setCopied]         = useState(false);
-  const [particles,      setParticles]      = useState<{ added: number[]; removed: number[] }>({ added: [], removed: [] });
+  const [step, setStep]                 = useState(0);
+  const [showHeatmap, setShowHeatmap]   = useState(false);
+  const [showParticles, setShowParticles] = useState(true);
+  const [isPlaying, setIsPlaying]       = useState(false);
+  const [soundOn, setSoundOn]           = useState(false);
+  const [isExporting, setIsExporting]   = useState(false);
+  const [exportPct, setExportPct]       = useState(0);
+  const [copied, setCopied]             = useState(false);
+  const [particles, setParticles]       = useState<{ added: number[]; removed: number[] }>({ added: [], removed: [] });
 
   const playRef     = useRef<ReturnType<typeof setInterval> | null>(null);
   const prevStepRef = useRef(0);
 
-  const maxStep      = Math.max(0, frames.length - 1);
+  const maxStep    = Math.max(0, frames.length - 1);
   const currentFrame = frames[step] ?? currentPixels ?? originalPixels ?? "";
 
-  const emptyHeat    = useMemo(() => new Float32Array(PIXEL_COUNT), []);
+  // Stable empty heatmap for when data isn't ready
+  const emptyHeat = useMemo(() => new Float32Array(PIXEL_COUNT), []);
   const activeHeatmap = showHeatmap ? (heatmapData ?? emptyHeat) : emptyHeat;
 
-  // Level-up sound
+  // Level-up sound on mount if high level
   useEffect(() => {
-    if (soundOn && (info?.level ?? 0) >= 20) {
+    if (soundOn && (info?.level ?? 0) >= 50) {
       const t = setTimeout(() => playLevelUp(), 1000);
       return () => clearTimeout(t);
     }
@@ -63,8 +65,6 @@ export default function NormieDetailClient({ tokenId }: Props) {
   const startPlay = useCallback(() => {
     if (maxStep === 0) return;
     if (isPlaying) stopPlay();
-    // Reset to start if at end
-    setStep(prev => { if (prev >= maxStep) { setTimeout(() => setStep(0), 0); return prev; } return prev; });
     setIsPlaying(true);
     playRef.current = setInterval(() => {
       setStep((prev) => {
@@ -82,12 +82,12 @@ export default function NormieDetailClient({ tokenId }: Props) {
     const prev = frames[prevStepRef.current] ?? "";
     const next = frames[step] ?? "";
     if (prev && next && prev !== next) {
-      const d = diffStrings(prev, next);
-      if (d.added.length > 0 || d.removed.length > 0) {
-        setParticles(d);
+      const diff = diffStrings(prev, next);
+      if (diff.added.length > 0 || diff.removed.length > 0) {
+        setParticles(diff);
         if (soundOn && showParticles) {
-          if (d.added.length)   playPixelBirth(Math.min(d.added.length, 8));
-          if (d.removed.length) playPixelDeath(Math.min(d.removed.length, 8));
+          if (diff.added.length)   playPixelBirth(Math.min(diff.added.length, 8));
+          if (diff.removed.length) playPixelDeath(Math.min(diff.removed.length, 8));
         }
       }
     }
@@ -127,20 +127,16 @@ export default function NormieDetailClient({ tokenId }: Props) {
     setTimeout(() => setCopied(false), 2000);
   }, []);
 
-  // Derive display values — prefer canvas/info, fall back to metadata attributes
+  // Derive display values
   const getAttribute = (key: string) =>
     traits?.attributes.find(a => a.trait_type === key)?.value;
 
-  const level      = info?.level      ?? (getAttribute("Level") as number | undefined) ?? 1;
+  const level      = info?.level ?? (getAttribute("Level") as number | undefined) ?? 1;
   const ap         = info?.actionPoints ?? (getAttribute("Action Points") as number | undefined) ?? 0;
   const customized = info?.customized ?? (getAttribute("Customized") === "Yes");
   const type       = normieType ?? (getAttribute("Type") as string | undefined);
 
-  // actionPoints = total unique pixels ever touched by canvas (= transform layer 1-bits)
-  // This is the authoritative "pixels changed" number from the contract
-  const totalPixelsChanged = info?.actionPoints ?? 0;
-
-  // ── Loading state ──────────────────────────────────────────────────────────
+  // ── Loading state ───────────────────────────────────────────────────────────
   if (isLoading && !currentPixels) {
     return (
       <div className="max-w-6xl mx-auto px-4 py-10">
@@ -166,7 +162,7 @@ export default function NormieDetailClient({ tokenId }: Props) {
     );
   }
 
-  // ── Error state ────────────────────────────────────────────────────────────
+  // ── Error state ─────────────────────────────────────────────────────────────
   if (hasError && !currentPixels) {
     return (
       <div className="max-w-6xl mx-auto px-4 py-10">
@@ -184,7 +180,7 @@ export default function NormieDetailClient({ tokenId }: Props) {
     );
   }
 
-  // ── Main UI ────────────────────────────────────────────────────────────────
+  // ── Main UI ─────────────────────────────────────────────────────────────────
   return (
     <div className="max-w-6xl mx-auto px-4 py-10 space-y-8">
 
@@ -196,9 +192,9 @@ export default function NormieDetailClient({ tokenId }: Props) {
         <h1 className="font-mono text-2xl font-medium text-n-text">normie #{tokenId}</h1>
         {type       && <span className="tag">{type.toLowerCase()}</span>}
         {customized && <span className="tag tag-active">customized</span>}
-        {level > 1  && <span className="tag tag-active">lvl {level}</span>}
+        <span className="tag tag-active">lvl {level}</span>
 
-        <div className="flex items-center gap-1.5 ml-auto flex-wrap">
+        <div className="flex items-center gap-1.5 ml-auto">
           <button onClick={handleToggleSound} title={soundOn ? "mute" : "sound on"}
             className="p-1.5 border border-n-border text-n-muted rounded hover:text-n-text hover:border-n-text transition-colors">
             {soundOn ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
@@ -212,7 +208,7 @@ export default function NormieDetailClient({ tokenId }: Props) {
             className="px-2.5 py-1.5 border border-n-border text-n-muted text-xs font-mono rounded hover:text-n-text hover:border-n-text transition-colors flex items-center gap-1">
             <Share2 className="w-3 h-3" /> {copied ? "copied!" : "share"}
           </button>
-          <button onClick={handleExport} disabled={isExporting || frames.length < 2}
+          <button onClick={handleExport} disabled={isExporting || frames.length === 0}
             className="px-2.5 py-1.5 bg-n-text text-n-bg text-xs font-mono rounded hover:opacity-80 transition-opacity disabled:opacity-40 flex items-center gap-1">
             {isExporting
               ? <><Loader2 className="w-3 h-3 animate-spin" /> {Math.round(exportPct * 100)}%</>
@@ -221,20 +217,22 @@ export default function NormieDetailClient({ tokenId }: Props) {
         </div>
       </div>
 
-      {/* Stats row — always show, even for uncustomized */}
-      <div className="grid grid-cols-4 gap-px bg-n-border">
-        {[
-          { label: "level",        value: level },
-          { label: "action pts",   value: ap },
-          { label: "edits",        value: editHistory.length },
-          { label: "px changed",   value: totalPixelsChanged },
-        ].map(({ label, value }) => (
-          <div key={label} className="bg-n-bg px-4 py-3">
-            <div className="text-xs font-mono text-n-muted">{label}</div>
-            <div className="text-lg font-mono font-medium text-n-text">{value}</div>
-          </div>
-        ))}
-      </div>
+      {/* Stats row */}
+      {info && (
+        <div className="grid grid-cols-4 gap-px bg-n-border">
+          {[
+            { label: "level",       value: level },
+            { label: "action pts",  value: ap },
+            { label: "edits",       value: editHistory.length },
+            { label: "px changed",  value: (diffAsIndices?.added.length ?? 0) + (diffAsIndices?.removed.length ?? 0) },
+          ].map(({ label, value }) => (
+            <div key={label} className="bg-n-bg px-4 py-3">
+              <div className="text-xs font-mono text-n-muted">{label}</div>
+              <div className="text-lg font-mono font-medium text-n-text">{value}</div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Main layout */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
@@ -246,13 +244,18 @@ export default function NormieDetailClient({ tokenId }: Props) {
             style={{ width: GRID_SIZE * SCALE, height: GRID_SIZE * SCALE, maxWidth: "100%" }}
           >
             {currentFrame && (
-              <NormieGrid pixelsStr={currentFrame} scale={SCALE} />
+              <NormieGrid
+                pixelsStr={currentFrame}
+                scale={SCALE}
+              />
             )}
 
+            {/* Heatmap overlay — uses cumulative Float32Array */}
             {showHeatmap && heatmapData && (
               <HeatmapOverlay heatData={activeHeatmap} scale={SCALE} />
             )}
 
+            {/* Particle system */}
             {showParticles && (
               <ParticleCanvas
                 addedPixels={particles.added}
@@ -263,19 +266,8 @@ export default function NormieDetailClient({ tokenId }: Props) {
 
             {/* Step badge */}
             <div className="absolute top-1.5 left-1.5 px-1.5 py-0.5 bg-n-bg/80 border border-n-border text-xs font-mono text-n-muted rounded backdrop-blur-sm">
-              {step === 0
-                ? "origin"
-                : step === maxStep
-                  ? "current"
-                  : `edit ${step} / ${maxStep}`}
+              {step === 0 ? "origin" : step === maxStep ? "current" : `edit ${step}`}
             </div>
-
-            {/* Loading overlay for frames */}
-            {historyLoading && currentFrame && (
-              <div className="absolute inset-0 flex items-center justify-center bg-n-bg/40">
-                <Loader2 className="w-6 h-6 animate-spin text-n-muted" />
-              </div>
-            )}
           </div>
 
           {/* Canvas toggles */}
@@ -287,7 +279,7 @@ export default function NormieDetailClient({ tokenId }: Props) {
                   : "border-n-border text-n-muted hover:border-n-muted"
               }`}>
               {showHeatmap ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
-              diff overlay
+              heatmap
             </button>
             <button onClick={() => setShowParticles(!showParticles)}
               className={`flex items-center gap-1 px-2.5 py-1 border text-xs font-mono rounded transition-colors ${
@@ -297,10 +289,10 @@ export default function NormieDetailClient({ tokenId }: Props) {
               }`}>
               particles
             </button>
-            {diff && (
+            {diffAsIndices && (
               <div className="flex items-center gap-2 px-2.5 py-1 border border-n-border rounded text-xs font-mono text-n-muted">
-                <span className="text-green-700">+{diff.addedCount}</span>
-                <span className="text-red-700">−{diff.removedCount}</span>
+                <span className="text-green-700">+{diffAsIndices.added.length}</span>
+                <span className="text-red-700">−{diffAsIndices.removed.length}</span>
               </div>
             )}
           </div>
@@ -333,7 +325,7 @@ export default function NormieDetailClient({ tokenId }: Props) {
               </div>
             </div>
 
-            {frames.length > 1 ? (
+            {frames.length > 0 ? (
               <TimelineScrubber
                 value={step}
                 max={maxStep}
@@ -342,14 +334,12 @@ export default function NormieDetailClient({ tokenId }: Props) {
               />
             ) : (
               <div className="text-xs font-mono text-n-faint text-center py-6">
-                {historyLoading
+                {isLoading
                   ? <span className="flex items-center justify-center gap-2">
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
                       loading on-chain history…
                     </span>
-                  : customized
-                    ? "one edit — use play to animate"
-                    : "no edit history — pristine from mint"}
+                  : "no edit history — pristine from mint"}
               </div>
             )}
           </div>
@@ -359,13 +349,13 @@ export default function NormieDetailClient({ tokenId }: Props) {
             <div className="border border-n-border rounded overflow-hidden">
               <div className="px-4 py-2.5 border-b border-n-border flex items-center justify-between">
                 <span className="text-xs font-mono text-n-muted uppercase tracking-wider">transformation log</span>
-                <span className="text-xs font-mono text-n-faint">{editHistory.length} event{editHistory.length !== 1 ? "s" : ""}</span>
+                <span className="text-xs font-mono text-n-faint">{editHistory.length} events</span>
               </div>
               <div className="divide-y divide-n-border max-h-56 overflow-y-auto">
                 {editHistory.map((edit, i) => (
                   <motion.div
                     key={edit.txHash}
-                    initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.03 }}
+                    initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.02 }}
                     onClick={() => handleStep(i + 1)}
                     className={`px-4 py-2.5 flex items-center gap-3 cursor-pointer hover:bg-n-surface transition-colors ${
                       step === i + 1 ? "bg-n-surface border-l-2 border-n-text" : ""
@@ -387,7 +377,7 @@ export default function NormieDetailClient({ tokenId }: Props) {
                     <a href={`https://etherscan.io/tx/${edit.txHash}`}
                       target="_blank" rel="noopener noreferrer"
                       className="text-n-faint hover:text-n-muted transition-colors"
-                      onClick={e => e.stopPropagation()}>
+                      onClick={(e) => e.stopPropagation()}>
                       <ExternalLink className="w-3 h-3" />
                     </a>
                   </motion.div>
@@ -435,7 +425,9 @@ export default function NormieDetailClient({ tokenId }: Props) {
                 {traits.attributes.map((attr) => (
                   <div key={attr.trait_type} className="bg-n-bg px-3 py-2">
                     <div className="text-xs font-mono text-n-faint">{attr.trait_type.toLowerCase()}</div>
-                    <div className="text-xs font-mono text-n-text font-medium">{String(attr.value)}</div>
+                    <div className="text-xs font-mono text-n-text font-medium">
+                      {String(attr.value)}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -445,7 +437,7 @@ export default function NormieDetailClient({ tokenId }: Props) {
       </div>
 
       {/* Life Story */}
-      {lifeStory.length > 0 && lifeStory[0] !== `Normie #${tokenId} has never been touched. An untouched original, pristine from the mint.` && (
+      {lifeStory.length > 0 && (
         <section className="border-t border-n-border pt-8 space-y-4">
           <h2 className="text-xs font-mono text-n-muted uppercase tracking-widest">life story</h2>
           <div className="space-y-3 max-w-xl">

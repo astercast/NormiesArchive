@@ -2,7 +2,7 @@
 
 import { motion } from "framer-motion";
 import * as Slider from "@radix-ui/react-slider";
-import { EditEvent } from "@/hooks/useNormieHistory";
+import { EditEvent } from "@/lib/eventIndexer";
 
 interface TimelineScrubberProps {
   value: number;

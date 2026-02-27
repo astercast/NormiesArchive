@@ -3,16 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { Loader2, Zap } from "lucide-react";
-
-interface NormieEntry {
-  tokenId:   number;
-  level:     number;
-  ap:        number;
-  added:     number;
-  removed:   number;
-  type:      string;
-  editCount: number;
-}
+import type { UpgradedNormie } from "@/lib/upgradedNormies";
 
 const BASE = "https://api.normies.art";
 
@@ -36,8 +27,8 @@ function TypeBadge({ type }: { type: string }) {
   return null;
 }
 
-function EditCountBadge({ count }: { count: number }) {
-  if (count < 2) return null;
+function EditCountBadge({ count }: { count?: number }) {
+  if (!count || count < 2) return null;
   return (
     <span className="absolute top-0.5 right-0.5 text-[7px] leading-none font-mono px-0.5 py-px rounded bg-n-text/60 text-n-bg flex items-center gap-px">
       <Zap className="w-[6px] h-[6px]" />{count}
@@ -46,34 +37,18 @@ function EditCountBadge({ count }: { count: number }) {
 }
 
 export default function ExploreGrid() {
-  const [normies,    setNormies]  = useState<NormieEntry[]>([]);
-  const [loading,    setLoading]  = useState(true);
-  const [scannedAt,  setScanned]  = useState<number | null>(null);
-  const [latestBlock, setBlock]   = useState<number | null>(null);
+  const [normies, setNormies]   = useState<UpgradedNormie[]>([]);
+  const [loading, setLoading]   = useState(true);
+  const [scannedAt, setScanned] = useState<number | null>(null);
+  const [latestBlock, setBlock] = useState<number | null>(null);
 
   useEffect(() => {
-    // Add cache-bust so we always get a fresh response after redeployment
-    fetch(`/api/leaderboards?v=${Math.floor(Date.now() / 60000)}`)
+    fetch("/api/upgraded")
       .then(r => r.json())
       .then(d => {
-        // Prefer `all` (full data). Fall back to building from `highestLevel` if missing (cached old response).
-        let entries: NormieEntry[] = [];
-        if (Array.isArray(d.all) && d.all.length > 0) {
-          entries = d.all;
-        } else if (Array.isArray(d.highestLevel) && d.highestLevel.length > 0) {
-          // Old response shape — reconstruct from leaderboard arrays
-          const byId = new Map<number, NormieEntry>();
-          for (const e of d.highestLevel) {
-            byId.set(e.tokenId, { tokenId: e.tokenId, level: e.value, ap: 0, added: 0, removed: 0, type: e.type ?? "Human", editCount: 0 });
-          }
-          for (const e of (d.mostEdited ?? [])) {
-            const n = byId.get(e.tokenId);
-            if (n) n.editCount = e.value;
-          }
-          entries = [...byId.values()];
+        if (d.upgraded?.length) {
+          setNormies(d.upgraded as UpgradedNormie[]);
         }
-        const sorted = [...entries].sort((a, b) => b.level - a.level || b.ap - a.ap);
-        setNormies(sorted);
         if (d.scannedAt)   setScanned(d.scannedAt);
         if (d.latestBlock) setBlock(d.latestBlock);
         setLoading(false);
@@ -81,13 +56,17 @@ export default function ExploreGrid() {
       .catch(() => setLoading(false));
   }, []);
 
+  const sorted = [...normies].sort((a, b) => b.level - a.level || b.ap - a.ap);
+
   if (loading) {
     return (
       <section className="space-y-4">
-        <h2 className="text-xs font-mono text-n-muted uppercase tracking-widest">upgraded normies</h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-xs font-mono text-n-muted uppercase tracking-widest">upgraded normies</h2>
+        </div>
         <div className="flex items-center gap-3 py-8 text-n-faint font-mono text-xs">
           <Loader2 className="w-4 h-4 animate-spin" />
-          scanning on-chain events…
+          indexing PixelsTransformed events from block 19,614,531…
         </div>
       </section>
     );
@@ -98,7 +77,7 @@ export default function ExploreGrid() {
       <div className="flex items-center justify-between flex-wrap gap-2">
         <h2 className="text-xs font-mono text-n-muted uppercase tracking-widest">
           upgraded normies
-          <span className="ml-2 text-n-faint">({normies.length} of 10,000)</span>
+          <span className="ml-2 text-n-faint">({sorted.length} of 10,000)</span>
         </h2>
         {latestBlock && scannedAt && (
           <span className="text-xs font-mono text-n-faint">
@@ -107,22 +86,22 @@ export default function ExploreGrid() {
         )}
       </div>
 
-      {normies.length === 0 ? (
+      {sorted.length === 0 ? (
         <p className="text-xs font-mono text-n-faint py-4">No customized normies found.</p>
       ) : (
         <>
           <div className="grid grid-cols-5 sm:grid-cols-7 md:grid-cols-10 gap-1.5">
-            {normies.map(({ tokenId, level, type, editCount }) => (
+            {sorted.map(({ id, level, type, editCount }) => (
               <Link
-                key={tokenId}
-                href={`/normie/${tokenId}`}
-                title={`Normie #${tokenId} · Level ${level} ${type} · ${editCount} edit${editCount !== 1 ? "s" : ""}`}
+                key={id}
+                href={`/normie/${id}`}
+                title={`Normie #${id} · Level ${level} ${type}${editCount ? ` · ${editCount} edits` : ""}`}
                 className="relative aspect-square border border-n-border rounded overflow-hidden hover:border-n-text transition-colors group bg-n-bg"
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                  src={`${BASE}/normie/${tokenId}/image.svg`}
-                  alt={`#${tokenId}`}
+                  src={`${BASE}/normie/${id}/image.svg`}
+                  alt={`#${id}`}
                   className="w-full h-full object-contain pixelated group-hover:scale-110 transition-transform duration-200"
                   loading="lazy"
                 />
@@ -132,8 +111,9 @@ export default function ExploreGrid() {
               </Link>
             ))}
           </div>
+
           <p className="text-xs font-mono text-n-faint text-center">
-            {normies.length} normie{normies.length !== 1 ? "s" : ""} transformed out of 10,000 ·{" "}
+            {sorted.length} normie{sorted.length !== 1 ? "s" : ""} have ever been transformed out of 10,000 ·{" "}
             click any to explore its full on-chain history
           </p>
         </>
