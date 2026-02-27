@@ -190,6 +190,35 @@ function mergeBurnLogs(burnsByToken, logs) {
   return touched;
 }
 
+
+// ─── Block timestamp fetching ─────────────────────────────────────────────────
+
+async function fetchTimestamps(blockNumbers, existingTimestamps = new Map()) {
+  const unique  = [...new Set(blockNumbers)].filter(b => !existingTimestamps.has(b));
+  if (unique.length === 0) return existingTimestamps;
+
+  console.log(`  fetching timestamps for ${unique.length} unique blocks…`);
+  const result  = new Map(existingTimestamps);
+  const BATCH   = 20;
+
+  for (let i = 0; i < unique.length; i += BATCH) {
+    const batch = unique.slice(i, i + BATCH);
+    const results = await Promise.allSettled(
+      batch.map(async bn => {
+        const block = await client.getBlock({ blockNumber: BigInt(bn) });
+        return { bn, ts: Number(block.timestamp) };
+      })
+    );
+    for (const r of results) {
+      if (r.status === "fulfilled") result.set(r.value.bn, r.value.ts);
+    }
+    if (i + BATCH < unique.length) await sleep(100);
+  }
+
+  console.log(`  resolved ${result.size} timestamps`);
+  return result;
+}
+
 // ─── Normie details batch fetcher ─────────────────────────────────────────────
 
 async function fetchNormiesBatch(ids, editsByToken) {
@@ -220,7 +249,7 @@ async function main() {
   }
 
   // Load existing blob
-  console.log("\n[1/4] Loading existing index from Blob…");
+  console.log("\n[1/5] Loading existing index from Blob…");
   const existing = await blobGet(EVENTS_KEY);
 
   const latest = await client.getBlockNumber();
@@ -248,7 +277,7 @@ async function main() {
   }
 
   // Scan new events
-  console.log("\n[2/4] Scanning blockchain events…");
+  console.log("\n[2/5] Scanning blockchain events…");
   const [editLogs, burnLogs] = await Promise.all([
     scanRange(fromBlock, latest, TRANSFORM_EVENT),
     scanRange(fromBlock, latest, BURN_EVENT),
@@ -260,7 +289,7 @@ async function main() {
   const toRefresh    = new Set([...touchedEdits, ...touchedBurns]);
 
   // Fetch normie details
-  console.log(`\n[3/4] Fetching normie details for ${toRefresh.size} token(s)…`);
+  console.log(`\n[3/5] Fetching normie details for ${toRefresh.size} token(s)…`);
   let normies = [];
 
   if (isIncremental && toRefresh.size > 0) {
@@ -279,16 +308,26 @@ async function main() {
   console.log(`      Total customized normies: ${normies.length}`);
 
   // Write to Blob
-  console.log("\n[4/4] Writing to Vercel Blob…");
+  
   const now         = Date.now();
   const latestBlock = Number(latest);
 
+  // Collect all block numbers from all events and fetch their timestamps
+  console.log("\n[4/5] Fetching block timestamps…");
+  const allBlockNums = [];
+  for (const events of editsByToken.values()) for (const e of events) allBlockNums.push(e.blockNumber);
+  for (const events of burnsByToken.values()) for (const e of events) allBlockNums.push(e.blockNumber);
+  const existingTs = existing?.timestamps ? new Map(existing.timestamps) : new Map();
+  const timestamps = await fetchTimestamps(allBlockNums, existingTs);
+
+  console.log("\n[5/5] Writing to Vercel Blob…");
   await Promise.all([
     blobPut(EVENTS_KEY, {
       latestBlock,
       savedAt:      now,
       editsByToken: [...editsByToken.entries()],
       burnsByToken: [...burnsByToken.entries()],
+      timestamps:   [...timestamps.entries()],
     }),
     blobPut(NORMIES_KEY, {
       normies,

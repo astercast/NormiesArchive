@@ -47,6 +47,7 @@ export interface EventsBlob {
   savedAt:      number; // unix ms
   editsByToken: Array<[number, RawEditEvent[]]>; // Map serialised as entries
   burnsByToken: Array<[number, RawBurnEvent[]]>;
+  timestamps?:  Array<[number, number]>; // [blockNumber, unixSeconds] pre-fetched by indexer
 }
 
 export interface NormiesBlob {

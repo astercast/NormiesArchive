@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
-import { Trophy, Edit3, RefreshCw, Loader2 } from "lucide-react";
+import { Trophy, Edit3, RefreshCw, Loader2, Zap } from "lucide-react";
 
 const BASE = "https://api.normies.art";
 
@@ -17,6 +17,7 @@ interface BoardEntry {
 interface LeaderboardData {
   highestLevel:    BoardEntry[];
   mostEdited:      BoardEntry[];
+  mostAp:          BoardEntry[];
   totalCustomized: number;
   scannedAt:       number;
   latestBlock:     number;
@@ -25,6 +26,7 @@ interface LeaderboardData {
 const TABS = [
   { id: "mostEdited"   as const, label: "most edited",   icon: Edit3,  desc: "Most PixelsTransformed events on-chain" },
   { id: "highestLevel" as const, label: "highest level", icon: Trophy, desc: "Highest level reached through burns & transforms" },
+  { id: "mostAp"       as const, label: "most AP",       icon: Zap,    desc: "Most action points accumulated through burns" },
 ] as const;
 type TabId = typeof TABS[number]["id"];
 

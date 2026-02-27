@@ -58,11 +58,12 @@ export interface BurnEvent {
 // ─── In-memory cache (avoids re-reading blob on every request) ────────────────
 
 interface MemCache {
-  editsByToken: Map<number, RawEditEvent[]>;
-  burnsByToken: Map<number, RawBurnEvent[]>;
-  normies:      UpgradedNormie[];
-  latestBlock:  number;
-  loadedAt:     number;
+  editsByToken:   Map<number, RawEditEvent[]>;
+  burnsByToken:   Map<number, RawBurnEvent[]>;
+  normies:        UpgradedNormie[];
+  latestBlock:    number;
+  loadedAt:       number;
+  blobTimestamps: Map<number, number>; // pre-fetched by indexer script
 }
 
 let _mem:         MemCache | null          = null;
@@ -359,20 +360,22 @@ async function loadMemCache(): Promise<MemCache> {
     // Do NOT do a fallback scan here — that would run at build time and fail.
     console.warn("[indexer] Blob empty — returning empty cache. Run /api/cron/index to populate.");
     return {
-      editsByToken: new Map(),
-      burnsByToken: new Map(),
-      normies:      [],
-      latestBlock:  Number(CANVAS_DEPLOY_BLOCK),
-      loadedAt:     Date.now(),
+      editsByToken:   new Map(),
+      burnsByToken:   new Map(),
+      normies:        [],
+      latestBlock:    Number(CANVAS_DEPLOY_BLOCK),
+      loadedAt:       Date.now(),
+      blobTimestamps: new Map(),
     };
   }
 
   return {
-    editsByToken: new Map(eventsBlob.editsByToken),
-    burnsByToken: new Map(eventsBlob.burnsByToken),
-    normies:      normiesBlob.normies,
-    latestBlock:  eventsBlob.latestBlock,
-    loadedAt:     Date.now(),
+    editsByToken:   new Map(eventsBlob.editsByToken),
+    burnsByToken:   new Map(eventsBlob.burnsByToken),
+    normies:        normiesBlob.normies,
+    latestBlock:    eventsBlob.latestBlock,
+    loadedAt:       Date.now(),
+    blobTimestamps: new Map(eventsBlob.timestamps ?? []),
   };
 }
 
@@ -408,12 +411,22 @@ export async function getTokenHistory(tokenId: number): Promise<{ edits: EditEve
 
   const allBlocks = [...rawEdits.map(e => e.blockNumber), ...rawBurns.map(b => b.blockNumber)];
 
+  // Seed tsCache from pre-fetched blob timestamps — avoids RPC calls for known blocks
+  for (const [bn, ts] of cache.blobTimestamps) {
+    if (!tsCache.has(bn)) tsCache.set(bn, ts);
+  }
+
+  // Only hit RPC for blocks not already cached
+  const missing = allBlocks.filter(b => !tsCache.has(b));
   let timestamps: Map<number, number>;
   try {
-    timestamps = await Promise.race([
-      resolveTimestamps(allBlocks),
-      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("ts timeout")), 25_000)),
-    ]);
+    if (missing.length > 0) {
+      await Promise.race([
+        resolveTimestamps(missing),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("ts timeout")), 25_000)),
+      ]);
+    }
+    timestamps = new Map(allBlocks.map(b => [b, tsCache.get(b) ?? Math.floor(Date.now() / 1000)]));
   } catch (err) {
     console.warn(`[history/${tokenId}] timestamp fallback:`, err);
     timestamps = new Map(allBlocks.map(b => [b, tsCache.get(b) ?? Math.floor(Date.now() / 1000)]));
@@ -436,6 +449,7 @@ export async function getLeaderboards() {
 
   const mostEdited   = [...normies].sort((a, b) => b.editCount - a.editCount || b.level - a.level);
   const highestLevel = [...normies].sort((a, b) => b.level - a.level || b.ap - a.ap);
+  const mostAp       = [...normies].sort((a, b) => b.ap - a.ap || b.level - a.level);
 
   return {
     all: normies.map(n => ({
@@ -444,6 +458,7 @@ export async function getLeaderboards() {
     })),
     mostEdited:   mostEdited.slice(0, 50).map(n => ({ tokenId: n.id, value: n.editCount, label: "edits",  type: n.type })),
     highestLevel: highestLevel.slice(0, 50).map(n => ({ tokenId: n.id, value: n.level,   label: "level",  type: n.type })),
+    mostAp:       mostAp.slice(0, 50).map(n => ({ tokenId: n.id, value: n.ap,        label: "AP",    type: n.type })),
     totalCustomized: normies.length,
     scannedAt,
     latestBlock,
