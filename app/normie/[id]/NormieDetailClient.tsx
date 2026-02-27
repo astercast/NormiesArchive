@@ -136,8 +136,9 @@ export default function NormieDetailClient({ tokenId }: Props) {
   const customized = info?.customized ?? (getAttribute("Customized") === "Yes");
   const type       = normieType ?? (getAttribute("Type") as string | undefined);
 
-  // Total pixels changed = sum of all edit changeCounts
-  const totalPixelsChanged = editHistory.reduce((s, e) => s + e.changeCount, 0);
+  // actionPoints = total unique pixels ever touched by canvas (= transform layer 1-bits)
+  // This is the authoritative "pixels changed" number from the contract
+  const totalPixelsChanged = info?.actionPoints ?? 0;
 
   // ── Loading state ──────────────────────────────────────────────────────────
   if (isLoading && !currentPixels) {
@@ -286,7 +287,7 @@ export default function NormieDetailClient({ tokenId }: Props) {
                   : "border-n-border text-n-muted hover:border-n-muted"
               }`}>
               {showHeatmap ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
-              heatmap
+              diff overlay
             </button>
             <button onClick={() => setShowParticles(!showParticles)}
               className={`flex items-center gap-1 px-2.5 py-1 border text-xs font-mono rounded transition-colors ${

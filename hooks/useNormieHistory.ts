@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { buildCumulativeHeatmap, diffStrings, coordsToIndices, PIXEL_COUNT } from "@/lib/pixelUtils";
+import { diffStrings, coordsToIndices, PIXEL_COUNT, GRID_SIZE } from "@/lib/pixelUtils";
 
 const BASE = "https://api.normies.art";
 
@@ -176,13 +176,18 @@ export function useNormieHistory(tokenId: number) {
     gcTime:    Infinity,
   });
 
+  // Diff overlay: 2=added (green), 1=removed (red), 0=untouched
+  // Built from canvas/diff — shows exactly which pixels were added vs removed vs original
   const heatmapData = useQuery({
     queryKey: ["normie", tokenId, "heatmap"],
     queryFn:  () => {
-      const f = frames.data!;
-      return f.length < 2 ? new Float32Array(PIXEL_COUNT) : buildCumulativeHeatmap(f);
+      const d = diff.data!;
+      const heat = new Float32Array(PIXEL_COUNT);
+      for (const { x, y } of d.added)   heat[y * GRID_SIZE + x] = 2; // green
+      for (const { x, y } of d.removed) heat[y * GRID_SIZE + x] = 1; // red
+      return heat;
     },
-    enabled:   !!(frames.data && frames.data.length >= 2),
+    enabled:   !!diff.data,
     staleTime: Infinity,
   });
 
