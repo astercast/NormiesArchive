@@ -64,29 +64,27 @@ export interface NormieDiff {
 // Build animation frames from original pixels + XOR transform layer + edit history.
 // Distributes flipped pixels proportionally across edits using their changeCount.
 function buildFrames(original: string, transformLayer: string, edits: EditEvent[]): string[] {
-  const frames: string[] = [original];
-
-  // Collect all pixel indices the transform layer flipped
+  // Collect pixel indices the transform layer flipped
   const flipped: number[] = [];
   for (let i = 0; i < 1600; i++) {
     if (transformLayer[i] === "1") flipped.push(i);
   }
 
-  if (flipped.length === 0) return [original, original];
-  if (edits.length === 0) {
-    // Apply all flips at once (shouldn't happen but guard)
+  // No canvas edits at all
+  if (flipped.length === 0 || edits.length === 0) {
+    if (flipped.length === 0) return [original];
     const arr = original.split("");
     for (const i of flipped) arr[i] = arr[i] === "1" ? "0" : "1";
-    frames.push(arr.join(""));
-    return frames;
+    return [original, arr.join("")];
   }
 
-  // Deterministic shuffle keyed on this normie's transform
+  // Deterministic shuffle so same normie = same animation every time
   const seed = flipped.length * 31337 + edits.length * 7919;
   const shuffled = seededShuffle(flipped, seed);
 
   const totalChanges = edits.reduce((s, e) => s + e.changeCount, 0) || 1;
   const current = original.split("");
+  const frames: string[] = [original];
   let applied = 0;
 
   for (let i = 0; i < edits.length; i++) {
@@ -96,16 +94,17 @@ function buildFrames(original: string, transformLayer: string, edits: EditEvent[
       const idx = shuffled[applied++];
       current[idx] = current[idx] === "1" ? "0" : "1";
     }
+    // Last edit frame: apply any remaining pixels to match exact final state
+    if (i === edits.length - 1) {
+      while (applied < shuffled.length) {
+        const idx = shuffled[applied++];
+        current[idx] = current[idx] === "1" ? "0" : "1";
+      }
+    }
     frames.push(current.join(""));
   }
 
-  // Ensure last frame applies any remaining pixels
-  while (applied < shuffled.length) {
-    const idx = shuffled[applied++];
-    current[idx] = current[idx] === "1" ? "0" : "1";
-  }
-  frames.push(current.join(""));
-  return frames;
+  return frames; // frames.length = edits.length + 1 (origin + one per edit)
 }
 
 function seededShuffle<T>(arr: T[], seed: number): T[] {
@@ -166,12 +165,12 @@ export function useNormieHistory(tokenId: number) {
     enabled, staleTime: 300_000, retry: 2,
   });
 
-  // Build frames once we have the pixel data — don't wait for history
-  // Shows current state immediately; timeline activates once history arrives
+  // Build frames only once we have ALL data: original, transform layer, AND history
+  // currentPixels is shown immediately as a preview while this loads
   const frames = useQuery({
-    queryKey: ["normie", tokenId, "frames", history.data?.edits.length ?? 0],
-    queryFn:  () => buildFrames(originalPixels.data!, transformLayer.data!, history.data?.edits ?? []),
-    enabled:  !!(originalPixels.data && transformLayer.data),
+    queryKey: ["normie", tokenId, "frames"],
+    queryFn:  () => buildFrames(originalPixels.data!, transformLayer.data!, history.data!.edits),
+    enabled:  !!(originalPixels.data && transformLayer.data && history.data),
     staleTime: Infinity,
     gcTime:    Infinity,
   });
