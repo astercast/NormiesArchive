@@ -73,27 +73,15 @@ export async function exportTimelineGif(
     for (let i = 0; i < frames.length; i++) {
       renderToCanvas(ctx, frames[i], scale);
 
-      // Watermark — bottom bar with solid background for readability
-      const wmText  = `normie #${tokenId} · normiesarchive.vercel.app`;
-      const wmFontSize = Math.max(7, Math.round(scale * 0.9));
-      ctx.font = `bold ${wmFontSize}px monospace`;
-      const wmPadX  = 4;
-      const wmPadY  = 3;
-      const wmW     = ctx.measureText(wmText).width + wmPadX * 2;
-      const wmH     = wmFontSize + wmPadY * 2;
-      const wmX     = size - wmW - 2;
-      const wmY     = size - wmH - 2;
-      // Background pill
-      ctx.fillStyle = "rgba(0,0,0,0.72)";
-      ctx.beginPath();
-      ctx.roundRect(wmX, wmY, wmW, wmH, 3);
-      ctx.fill();
-      // Text
-      ctx.fillStyle = "rgba(255,255,255,0.95)";
-      ctx.textAlign = "left";
-      ctx.textBaseline = "top";
-      ctx.fillText(wmText, wmX + wmPadX, wmY + wmPadY);
-      ctx.textBaseline = "alphabetic";
+      // Watermark — top right, plain grey text
+      const wmText     = `normie #${tokenId} · normiesarchive.vercel.app`;
+      const wmFontSize = Math.max(6, Math.round(scale * 0.85));
+      ctx.font          = `${wmFontSize}px monospace`;
+      ctx.fillStyle     = "rgba(140,140,140,0.85)";
+      ctx.textAlign     = "right";
+      ctx.textBaseline  = "top";
+      ctx.fillText(wmText, size - 3, 3);
+      ctx.textBaseline  = "alphabetic";
 
       const delay = i === 0 ? 1000 : i === frames.length - 1 ? 2000 : 120;
       gif.addFrame(ctx, { delay, copy: true });
