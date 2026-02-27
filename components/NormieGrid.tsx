@@ -40,7 +40,7 @@ const NormieGrid = memo(function NormieGrid({
       width={size}
       height={size}
       className={`pixelated block ${className}`}
-      style={{ imageRendering: "pixelated", width: size, height: size }}
+      style={{ imageRendering: "pixelated" }}
     />
   );
 });

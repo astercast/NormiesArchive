@@ -259,11 +259,11 @@ export default function NormieDetailClient({ tokenId }: Props) {
         {/* Left: Canvas */}
         <div className="space-y-3">
           <div
-            className="relative border border-n-border rounded overflow-hidden inline-block"
-            style={{ width: GRID_SIZE * SCALE, height: GRID_SIZE * SCALE, maxWidth: "100%" }}
+            className="relative border border-n-border rounded overflow-hidden w-full"
+            style={{ aspectRatio: "1 / 1", maxWidth: GRID_SIZE * SCALE }}
           >
             {currentFrame && (
-              <NormieGrid pixelsStr={currentFrame} scale={SCALE} />
+              <NormieGrid pixelsStr={currentFrame} scale={SCALE} className="!w-full !h-full" />
             )}
 
             {showHeatmap && heatmapData && (

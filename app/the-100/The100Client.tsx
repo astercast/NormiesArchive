@@ -73,10 +73,7 @@ export default function The100Client() {
     <div className="space-y-5">
 
       {/* Meta row */}
-      <div className="flex items-center justify-between flex-wrap gap-2">
-        <p className="text-xs font-mono text-n-faint">
-          first edit block per normie · earliest 100 on-chain
-        </p>
+      <div className="flex items-center justify-end flex-wrap gap-2">
         <div className="flex items-center gap-3">
           {data && (
             <span className="text-xs font-mono text-n-faint">
@@ -149,8 +146,8 @@ export default function The100Client() {
 
                 {/* Block + tx link */}
                 <div className="flex flex-col items-end gap-0.5 flex-shrink-0">
-                  <span className="text-[10px] font-mono text-n-faint">block {entry.blockNumber.toLocaleString()}</span>
-                  <span className="text-[10px] font-mono text-n-faint">Δ{entry.changeCount}px</span>
+                  <span className="text-[7px] sm:text-[10px] font-mono text-n-faint">block {entry.blockNumber.toLocaleString()}</span>
+                  <span className="text-[8px] sm:text-[10px] font-mono text-n-faint">Δ{entry.changeCount}px</span>
                 </div>
 
                 <a
