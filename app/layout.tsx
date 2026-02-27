@@ -9,6 +9,21 @@ export const metadata: Metadata = {
   openGraph: {
     siteName: "Normies Pixel Archive",
     type: "website",
+    title: "Normies Pixel Archive",
+    description: "10,000 on-chain faces. All history preserved.",
+    images: [{ url: "/og-image.png", width: 1200, height: 630, alt: "Normies Pixel Archive" }],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Normies Pixel Archive",
+    description: "10,000 on-chain faces. All history preserved.",
+    images: ["/og-image.png"],
+  },
+  icons: {
+    icon: [
+      { url: "/favicon.ico" },
+      { url: "/icon.png", type: "image/png", sizes: "32x32" },
+    ],
   },
 };
 

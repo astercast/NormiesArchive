@@ -37,9 +37,10 @@ export default function Nav() {
         {/* Center links */}
         <div className="hidden md:flex items-center gap-5 text-xs font-mono">
           {[
-            { href: "/",            label: "home" },
-            { href: "/leaderboard", label: "leaderboard" },
-            { href: "/the-100",     label: "the 100" },
+            { href: "/",             label: "home" },
+            { href: "/leaderboard",  label: "leaderboard" },
+            { href: "/the-100",      label: "the 100" },
+            { href: "/how-it-works", label: "how it works" },
           ].map((link) => (
             <Link
               key={link.href}
