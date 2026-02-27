@@ -1,17 +1,16 @@
 /**
  * Global event indexer — server-side only.
  *
- * Scans ALL PixelsTransformed + BurnRevealed events once, stores per-token logs.
- * Timestamps are NOT fetched during scan (that was the timeout culprit).
- * Instead, timestamps are fetched lazily per-token when history is requested —
- * each token has at most ~10-20 unique blocks, so this is fast (1-2 RPC calls).
+ * INCREMENTAL SCANNING: on first call, scans from deploy block → latest.
+ * On subsequent cache refreshes, only scans the new blocks since last run.
+ * New events are merged into existing maps — never rescanning old blocks.
  *
  * Speed architecture:
  *  - 50k-block chunks (max supported by public RPCs)
- *  - 8 chunks in parallel per batch
- *  - Timestamps fetched all-at-once per-token (tiny set, fast)
- *  - Module-level cache, background revalidation after 10 min
- *  - Vercel CDN caches /api/normie/[id]/history for 5 min
+ *  - 12 chunks in parallel per batch
+ *  - Timestamps fetched lazily per-token (tiny set per token, fast)
+ *  - Module-level cache, incremental revalidation after 10 min
+ *  - Vercel CDN caches each API route for 5 min
  */
 
 import { parseAbiItem } from "viem";
@@ -19,7 +18,7 @@ import { publicClient, CANVAS_ADDRESS } from "./viemClient";
 
 export const CANVAS_DEPLOY_BLOCK = 19_614_531n;
 const CHUNK_SIZE      = 50_000n;
-const PARALLEL_CHUNKS = 12;             // was 8 — more parallel chunks = faster cold scan
+const PARALLEL_CHUNKS = 12;
 const CACHE_TTL_MS    = 10 * 60 * 1000; // 10 min
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -76,7 +75,7 @@ interface GlobalCache {
   editsByToken: Map<number, RawEditEvent[]>;
   burnsByToken: Map<number, RawBurnEvent[]>;
   scannedAt:    number;
-  latestBlock:  number;
+  latestBlock:  number; // highest block we've scanned up to (inclusive)
 }
 
 let _cache:       GlobalCache | null          = null;
@@ -85,8 +84,7 @@ let _scanPromise: Promise<GlobalCache> | null = null;
 // ─── Block timestamps (module-level cache, shared across token lookups) ────────
 
 const tsCache = new Map<number, number>();
-
-const TS_BATCH_SIZE = 15; // was 5 — more parallel timestamp fetches = faster per-token history
+const TS_BATCH_SIZE = 15;
 
 async function fetchBlockTimestamp(bn: number): Promise<{ bn: number; ts: number }> {
   const block = await Promise.race([
@@ -101,14 +99,12 @@ async function resolveTimestamps(blockNumbers: number[]): Promise<Map<number, nu
   const missing = unique.filter(b => !tsCache.has(b));
 
   if (missing.length > 0) {
-    // Fetch in small batches to avoid rate-limiting
     for (let i = 0; i < missing.length; i += TS_BATCH_SIZE) {
       const batch = missing.slice(i, i + TS_BATCH_SIZE);
       const results = await Promise.allSettled(batch.map(fetchBlockTimestamp));
       for (const r of results) {
         if (r.status === "fulfilled") tsCache.set(r.value.bn, r.value.ts);
       }
-      // Small gap between batches to avoid hammering the RPC
       if (i + TS_BATCH_SIZE < missing.length) await new Promise(r => setTimeout(r, 50));
     }
   }
@@ -141,7 +137,6 @@ async function fetchChunk(from: bigint, to: bigint, event: import("viem").AbiEve
     return await publicClient.getLogs({ address: CANVAS_ADDRESS, event, fromBlock: from, toBlock: to }) as RawLog[];
   } catch (err) {
     if (attempt < 2) {
-      // Wait a bit then retry — transient RPC errors are common
       await new Promise(r => setTimeout(r, 500 * (attempt + 1)));
       return fetchChunk(from, to, event, attempt + 1);
     }
@@ -150,10 +145,11 @@ async function fetchChunk(from: bigint, to: bigint, event: import("viem").AbiEve
   }
 }
 
-async function scanEvent(latest: bigint, event: import("viem").AbiEvent): Promise<RawLog[]> {
+async function scanRange(from: bigint, to: bigint, event: import("viem").AbiEvent): Promise<RawLog[]> {
+  if (from > to) return [];
   const chunks: Array<[bigint, bigint]> = [];
-  for (let f = CANVAS_DEPLOY_BLOCK; f <= latest; f += CHUNK_SIZE) {
-    chunks.push([f, f + CHUNK_SIZE - 1n < latest ? f + CHUNK_SIZE - 1n : latest]);
+  for (let f = from; f <= to; f += CHUNK_SIZE) {
+    chunks.push([f, f + CHUNK_SIZE - 1n < to ? f + CHUNK_SIZE - 1n : to]);
   }
   const all: RawLog[] = [];
   for (let i = 0; i < chunks.length; i += PARALLEL_CHUNKS) {
@@ -194,7 +190,6 @@ async function fetchNormieDetails(id: number, editCount: number): Promise<Upgrad
 async function fetchWithRetry(url: string, attempt = 0): Promise<Response> {
   const res = await fetch(url, { cache: "no-store" });
   if (res.status === 429 && attempt < 4) {
-    // Respect rate limit — back off then retry
     const retryAfter = parseInt(res.headers.get("Retry-After") ?? "2", 10);
     await new Promise(r => setTimeout(r, (retryAfter || 2) * 1000 * (attempt + 1)));
     return fetchWithRetry(url, attempt + 1);
@@ -202,27 +197,15 @@ async function fetchWithRetry(url: string, attempt = 0): Promise<Response> {
   return res;
 }
 
-// ─── Full scan — no timestamp fetching ───────────────────────────────────────
+// ─── Merge new logs into existing maps ────────────────────────────────────────
 
-async function doFullScan(): Promise<GlobalCache> {
-  console.log("[indexer] Starting full scan…");
-  const t0 = Date.now();
-  const latest = await publicClient.getBlockNumber();
-
-  // Scan both event types in parallel
-  const [editLogs, burnLogs] = await Promise.all([
-    scanEvent(latest, TRANSFORM_EVENT),
-    scanEvent(latest, BURN_EVENT),
-  ]);
-
-  console.log(`[indexer] ${editLogs.length} edit events, ${burnLogs.length} burn events in ${Date.now() - t0}ms`);
-
-  // Build per-token edit maps — timestamps deferred to per-token lookup
-  const editsByToken     = new Map<number, RawEditEvent[]>();
-  const editCountByToken = new Map<number, number>();
-
-  for (const log of editLogs) {
-    const id    = Number(log.args.tokenId);
+function mergeEditLogs(
+  editsByToken: Map<number, RawEditEvent[]>,
+  logs: RawLog[]
+): Set<number> {
+  const touched = new Set<number>();
+  for (const log of logs) {
+    const id = Number(log.args.tokenId);
     const event: RawEditEvent = {
       blockNumber:   Number(log.blockNumber),
       txHash:        log.transactionHash,
@@ -232,17 +215,22 @@ async function doFullScan(): Promise<GlobalCache> {
     };
     if (!editsByToken.has(id)) editsByToken.set(id, []);
     editsByToken.get(id)!.push(event);
-    editCountByToken.set(id, (editCountByToken.get(id) ?? 0) + 1);
+    touched.add(id);
   }
-
-  for (const [, events] of editsByToken) {
-    events.sort((a, b) => a.blockNumber - b.blockNumber);
+  // Re-sort only the tokens that received new events
+  for (const id of touched) {
+    editsByToken.get(id)!.sort((a, b) => a.blockNumber - b.blockNumber);
   }
+  return touched;
+}
 
-  // Build per-token burn maps
-  const burnsByToken = new Map<number, RawBurnEvent[]>();
-  for (const log of burnLogs) {
-    const id    = Number(log.args.receiverTokenId);
+function mergeBurnLogs(
+  burnsByToken: Map<number, RawBurnEvent[]>,
+  logs: RawLog[]
+): Set<number> {
+  const touched = new Set<number>();
+  for (const log of logs) {
+    const id = Number(log.args.receiverTokenId);
     const event: RawBurnEvent = {
       blockNumber:  Number(log.blockNumber),
       txHash:       log.transactionHash,
@@ -252,10 +240,38 @@ async function doFullScan(): Promise<GlobalCache> {
     };
     if (!burnsByToken.has(id)) burnsByToken.set(id, []);
     burnsByToken.get(id)!.push(event);
+    touched.add(id);
+  }
+  return touched;
+}
+
+// ─── Full scan (first time) ───────────────────────────────────────────────────
+
+async function doFullScan(): Promise<GlobalCache> {
+  console.log("[indexer] Starting full scan…");
+  const t0     = Date.now();
+  const latest = await publicClient.getBlockNumber();
+
+  const [editLogs, burnLogs] = await Promise.all([
+    scanRange(CANVAS_DEPLOY_BLOCK, latest, TRANSFORM_EVENT),
+    scanRange(CANVAS_DEPLOY_BLOCK, latest, BURN_EVENT),
+  ]);
+
+  console.log(`[indexer] ${editLogs.length} edit events, ${burnLogs.length} burn events in ${Date.now() - t0}ms`);
+
+  const editsByToken = new Map<number, RawEditEvent[]>();
+  const burnsByToken = new Map<number, RawBurnEvent[]>();
+
+  mergeEditLogs(editsByToken, editLogs);
+  mergeBurnLogs(burnsByToken, burnLogs);
+
+  // Build edit count per token for leaderboard
+  const editCountByToken = new Map<number, number>();
+  for (const [id, events] of editsByToken) {
+    editCountByToken.set(id, events.length);
   }
 
-  // Fetch normie details for all customized tokens
-  // 3 requests per normie × 8 per batch = 24 req/batch, well under 60 req/min with 1.5s gap
+  // Fetch normie details — 8 per batch, 1.5s gap to stay under rate limit
   const allIds  = [...editCountByToken.keys()];
   const normies: UpgradedNormie[] = [];
   const BATCH   = 8;
@@ -274,27 +290,103 @@ async function doFullScan(): Promise<GlobalCache> {
     scannedAt:   Date.now(),
     latestBlock: Number(latest),
   };
-  console.log(`[indexer] Done: ${normies.length} normies in ${Date.now() - t0}ms`);
+  console.log(`[indexer] Full scan done: ${normies.length} normies, block ${Number(latest)} in ${Date.now() - t0}ms`);
   return entry;
 }
 
-// ─── Public API ───────────────────────────────────────────────────────────────
+// ─── Incremental scan (subsequent refreshes) ─────────────────────────────────
+
+async function doIncrementalScan(existing: GlobalCache): Promise<GlobalCache> {
+  const fromBlock = BigInt(existing.latestBlock + 1);
+  const latest    = await publicClient.getBlockNumber();
+
+  if (fromBlock > latest) {
+    // Nothing new — just bump the timestamp so TTL resets
+    console.log(`[indexer] Incremental: no new blocks (head=${latest})`);
+    return { ...existing, scannedAt: Date.now() };
+  }
+
+  console.log(`[indexer] Incremental scan blocks ${fromBlock}–${latest}…`);
+  const t0 = Date.now();
+
+  const [editLogs, burnLogs] = await Promise.all([
+    scanRange(fromBlock, latest, TRANSFORM_EVENT),
+    scanRange(fromBlock, latest, BURN_EVENT),
+  ]);
+
+  if (editLogs.length === 0 && burnLogs.length === 0) {
+    console.log(`[indexer] Incremental: 0 new events in ${Date.now() - t0}ms`);
+    return { ...existing, scannedAt: Date.now(), latestBlock: Number(latest) };
+  }
+
+  console.log(`[indexer] Incremental: ${editLogs.length} edits, ${burnLogs.length} burns in ${Date.now() - t0}ms`);
+
+  // Clone maps so we don't mutate the live cache
+  const editsByToken = new Map(Array.from(existing.editsByToken, ([k, v]) => [k, [...v]]));
+  const burnsByToken = new Map(Array.from(existing.burnsByToken, ([k, v]) => [k, [...v]]));
+
+  const touchedByEdit = mergeEditLogs(editsByToken, editLogs);
+  const touchedByBurn = mergeBurnLogs(burnsByToken, burnLogs);
+
+  // Only re-fetch normie details for tokens with new events
+  const toRefresh = new Set([...touchedByEdit, ...touchedByBurn]);
+  const normies   = existing.normies.filter(n => !toRefresh.has(n.id)); // keep untouched ones
+
+  const toFetch = [...toRefresh];
+  const BATCH   = 8;
+  for (let i = 0; i < toFetch.length; i += BATCH) {
+    const batch   = toFetch.slice(i, i + BATCH);
+    const results = await Promise.all(
+      batch.map(id => fetchNormieDetails(id, editsByToken.get(id)?.length ?? 0))
+    );
+    for (const r of results) { if (r) normies.push(r); }
+    if (i + BATCH < toFetch.length) await new Promise(r => setTimeout(r, 1500));
+  }
+  normies.sort((a, b) => b.level - a.level || b.ap - a.ap);
+
+  const entry: GlobalCache = {
+    normies,
+    editsByToken,
+    burnsByToken,
+    scannedAt:   Date.now(),
+    latestBlock: Number(latest),
+  };
+  console.log(`[indexer] Incremental done: ${toRefresh.size} tokens refreshed, block ${Number(latest)}`);
+  return entry;
+}
+
+// ─── Public cache API ─────────────────────────────────────────────────────────
 
 async function getCache(): Promise<GlobalCache> {
   const now = Date.now();
+
+  // Still fresh — return immediately
   if (_cache && now - _cache.scannedAt < CACHE_TTL_MS) return _cache;
-  if (!_scanPromise) {
-    _scanPromise = doFullScan()
-      .then(entry => { _cache = entry; return entry; })
-      .finally(() => { _scanPromise = null; });
+
+  // Already revalidating — return stale if we have it, otherwise wait
+  if (_scanPromise) {
+    return _cache ?? _scanPromise;
   }
-  if (_cache) return _cache; // return stale while revalidating
-  return _scanPromise;
+
+  // Kick off the right kind of scan
+  _scanPromise = (_cache ? doIncrementalScan(_cache) : doFullScan())
+    .then(entry => { _cache = entry; return entry; })
+    .catch(err => {
+      console.error("[indexer] scan failed:", err);
+      // On failure, keep stale cache if available rather than returning nothing
+      if (_cache) return _cache;
+      throw err;
+    })
+    .finally(() => { _scanPromise = null; });
+
+  // Return stale while revalidating (never block on refresh)
+  return _cache ?? _scanPromise;
 }
+
+// ─── Public exports (unchanged signatures) ────────────────────────────────────
 
 /**
  * Per-token history — fetches timestamps lazily only for this token's blocks.
- * Very fast: each token has at most ~10-20 unique blocks.
  */
 export async function getTokenHistory(tokenId: number): Promise<{ edits: EditEvent[]; burns: BurnEvent[] }> {
   const cache    = await getCache();
@@ -305,10 +397,8 @@ export async function getTokenHistory(tokenId: number): Promise<{ edits: EditEve
     return { edits: [], burns: [] };
   }
 
-  // Collect unique block numbers for this token only
   const allBlocks = [...rawEdits.map(e => e.blockNumber), ...rawBurns.map(b => b.blockNumber)];
 
-  // Race timestamp resolution against a 25s timeout to prevent hanging
   let timestamps: Map<number, number>;
   try {
     timestamps = await Promise.race([
@@ -319,7 +409,6 @@ export async function getTokenHistory(tokenId: number): Promise<{ edits: EditEve
     ]);
   } catch (err) {
     console.warn(`[history/${tokenId}] timestamp fallback:`, err);
-    // Return with best-effort cached timestamps rather than failing
     timestamps = new Map(allBlocks.map(b => [b, tsCache.get(b) ?? Math.floor(Date.now() / 1000)]));
   }
 
@@ -360,7 +449,6 @@ export async function getUpgradedNormies() {
 
 /**
  * The 100 — the first 100 Normies ever edited on the Canvas, sorted by first-edit block.
- * Returns tokenId + blockNumber + txHash of the first edit, plus trait type.
  */
 export async function getThe100(): Promise<{
   entries: Array<{ tokenId: number; blockNumber: number; txHash: string; rank: number; type: string; changeCount: number }>;
@@ -369,14 +457,11 @@ export async function getThe100(): Promise<{
 }> {
   const cache = await getCache();
 
-  // Each token in editsByToken has events sorted by blockNumber ascending.
-  // Pull the first edit for each token, sort globally by blockNumber, take top 100.
   const pioneers: Array<{ tokenId: number; blockNumber: number; txHash: string; changeCount: number; type: string }> = [];
 
   for (const [tokenId, events] of cache.editsByToken) {
     if (events.length === 0) continue;
-    const first = events[0];
-    // Try to get type from normies list
+    const first  = events[0];
     const normie = cache.normies.find(n => n.id === tokenId);
     pioneers.push({
       tokenId,
