@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
-import { Search, Menu, X } from "lucide-react";
+import { Search, Menu, X, Sun, Moon } from "lucide-react";
 
 const LINKS = [
   { href: "/",             label: "home" },
@@ -17,6 +17,19 @@ export default function Nav() {
   const router   = useRouter();
   const [query,    setQuery]    = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
+  const [dark,     setDark]     = useState(false);
+
+  // Sync dark state from html class (set by inline script before paint)
+  useEffect(() => {
+    setDark(document.documentElement.classList.contains("dark"));
+  }, []);
+
+  const toggleDark = () => {
+    const next = !dark;
+    setDark(next);
+    document.documentElement.classList.toggle("dark", next);
+    try { localStorage.setItem("theme", next ? "dark" : "light"); } catch {}
+  };
 
   // Close menu on route change
   useEffect(() => { setMenuOpen(false); }, [pathname]);
@@ -71,7 +84,7 @@ export default function Nav() {
             ))}
           </div>
 
-          {/* Right side: search + hamburger */}
+          {/* Right: search + dark toggle + hamburger */}
           <div className="flex items-center gap-2">
             <form onSubmit={handleSearch} className="flex items-center gap-1.5">
               <div className="relative">
@@ -93,6 +106,15 @@ export default function Nav() {
                 go
               </button>
             </form>
+
+            {/* Dark mode toggle */}
+            <button
+              onClick={toggleDark}
+              className="p-1.5 border border-n-border rounded text-n-muted hover:text-n-text hover:border-n-text transition-colors"
+              aria-label="Toggle dark mode"
+            >
+              {dark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+            </button>
 
             {/* Hamburger — mobile only */}
             <button

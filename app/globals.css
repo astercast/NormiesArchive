@@ -3,14 +3,23 @@
 @import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Sans:wght@400;500;600&display=swap");
 
 :root {
-  --bg:       #e3e5e4;   /* normies off-pixel / page background */
-  --surface:  #d6d8d7;   /* slightly darker surface */
-  --border:   #c2c4c3;   /* subtle borders */
-  --text:     #48494b;   /* normies on-pixel / primary text */
-  --muted:    #82848a;   /* secondary text */
-  --faint:    #b8bab9;   /* disabled / placeholder */
-  --accent:   #48494b;   /* same as text — monochrome accent */
-  --white:    #f5f5f4;   /* near-white panels */
+  --bg:      #e3e5e4;
+  --surface: #d6d8d7;
+  --border:  #c2c4c3;
+  --text:    #48494b;
+  --muted:   #82848a;
+  --faint:   #b8bab9;
+  --white:   #f5f5f4;
+}
+
+.dark {
+  --bg:      #18191a;
+  --surface: #222324;
+  --border:  #2e2f31;
+  --text:    #d4d5d3;
+  --muted:   #7a7c82;
+  --faint:   #4a4c50;
+  --white:   #2a2b2d;
 }
 
 * { box-sizing: border-box; }
@@ -23,6 +32,7 @@ body {
   -webkit-font-smoothing: antialiased;
   overflow-x: hidden;
   min-height: 100vh;
+  transition: background 0.2s ease, color 0.2s ease;
 }
 
 /* Subtle scanline texture */
@@ -84,4 +94,8 @@ body::before {
   color: var(--text);
   border-color: var(--text);
   background: rgba(72,73,75,0.06);
+}
+
+.dark .tag-active {
+  background: rgba(212,213,211,0.06);
 }

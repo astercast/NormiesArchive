@@ -148,7 +148,7 @@ export default function The100Client() {
                 </div>
 
                 {/* Block + tx link */}
-                <div className="hidden sm:flex flex-col items-end gap-0.5 flex-shrink-0">
+                <div className="flex flex-col items-end gap-0.5 flex-shrink-0">
                   <span className="text-[10px] font-mono text-n-faint">block {entry.blockNumber.toLocaleString()}</span>
                   <span className="text-[10px] font-mono text-n-faint">Δ{entry.changeCount}px</span>
                 </div>

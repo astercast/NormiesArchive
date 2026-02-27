@@ -1,6 +1,7 @@
 import type { Config } from "tailwindcss";
 
 const config: Config = {
+  darkMode: "class",
   content: [
     "./pages/**/*.{js,ts,jsx,tsx,mdx}",
     "./components/**/*.{js,ts,jsx,tsx,mdx}",
@@ -9,14 +10,14 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        // Normies.art official palette
-        "n-bg":      "#e3e5e4",  // off-pixel / page background
-        "n-surface": "#d6d8d7",  // card backgrounds
-        "n-border":  "#c2c4c3",  // borders
-        "n-text":    "#48494b",  // on-pixel / primary text
-        "n-muted":   "#82848a",  // secondary text
-        "n-faint":   "#b8bab9",  // placeholders
-        "n-white":   "#f5f5f4",  // near-white panels
+        // These map to CSS variables so they switch automatically with dark mode
+        "n-bg":      "var(--bg)",
+        "n-surface": "var(--surface)",
+        "n-border":  "var(--border)",
+        "n-text":    "var(--text)",
+        "n-muted":   "var(--muted)",
+        "n-faint":   "var(--faint)",
+        "n-white":   "var(--white)",
       },
       fontFamily: {
         mono: ["IBM Plex Mono", "monospace"],
