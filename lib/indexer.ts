@@ -354,16 +354,15 @@ async function loadMemCache(): Promise<MemCache> {
   ]);
 
   if (!eventsBlob || !normiesBlob) {
-    // Blob not populated yet — do an in-memory full scan as fallback
-    console.warn("[indexer] Blob empty — falling back to in-memory scan");
-    const { eventsBlob: eb, normiesBlob: nb } = await runFullScan();
-    // Attempt to save to blob for next time (fire and forget)
-    Promise.all([saveEventsBlob(eb), saveNormiesBlob(nb)]).catch(console.error);
+    // Blob not populated yet — return empty cache.
+    // The cron job at /api/cron/index will populate it on first run.
+    // Do NOT do a fallback scan here — that would run at build time and fail.
+    console.warn("[indexer] Blob empty — returning empty cache. Run /api/cron/index to populate.");
     return {
-      editsByToken: new Map(eb.editsByToken),
-      burnsByToken: new Map(eb.burnsByToken),
-      normies:      nb.normies,
-      latestBlock:  eb.latestBlock,
+      editsByToken: new Map(),
+      burnsByToken: new Map(),
+      normies:      [],
+      latestBlock:  Number(CANVAS_DEPLOY_BLOCK),
       loadedAt:     Date.now(),
     };
   }

@@ -7,7 +7,10 @@ export const maxDuration = 300;
 export async function GET() {
   try {
     const data = await getLeaderboards();
-    const res = NextResponse.json(data);
+    const res = NextResponse.json({
+      ...data,
+      indexing: data.totalCustomized === 0,
+    });
     res.headers.set("Cache-Control", "public, s-maxage=300, stale-while-revalidate=600");
     return res;
   } catch (err) {
