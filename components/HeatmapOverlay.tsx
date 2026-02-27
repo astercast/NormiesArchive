@@ -40,8 +40,8 @@ export default function HeatmapOverlay({ heatData, scale = 10 }: Props) {
       ref={ref}
       width={size}
       height={size}
-      className="absolute inset-0 pointer-events-none"
-      style={{ imageRendering: "pixelated", width: size, height: size }}
+      className="absolute inset-0 pointer-events-none w-full h-full"
+      style={{ imageRendering: "pixelated" }}
     />
   );
 }
