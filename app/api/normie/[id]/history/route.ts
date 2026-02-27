@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { getTokenHistory } from "@/lib/indexer";
 
-export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const dynamic     = "force-dynamic";
+export const maxDuration = 300; // 5 min — cold scan needs time
 
 interface Props { params: Promise<{ id: string }> }
 

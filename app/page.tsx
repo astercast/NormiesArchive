@@ -1,7 +1,8 @@
 import Link from "next/link";
-import { Trophy } from "lucide-react";
+import { Trophy, Flame } from "lucide-react";
 import SpotlightFader from "@/components/SpotlightFader";
 import ExploreGrid from "@/components/ExploreGrid";
+import CanvasStatusPill from "@/components/CanvasStatusPill";
 
 export default function HomePage() {
   return (
@@ -12,6 +13,7 @@ export default function HomePage() {
         <div className="flex items-center gap-2 text-xs font-mono text-n-muted">
           <span className="w-1.5 h-1.5 rounded-full bg-n-text inline-block" />
           10,000 normies · ethereum mainnet · all history on-chain
+          <CanvasStatusPill />
         </div>
 
         <div className="space-y-1">
@@ -31,6 +33,11 @@ export default function HomePage() {
             className="inline-flex items-center gap-2 px-4 py-2 border border-n-border text-xs font-mono text-n-muted hover:text-n-text hover:border-n-text transition-colors rounded">
             <Trophy className="w-3.5 h-3.5" />
             leaderboard
+          </Link>
+          <Link href="/the-100"
+            className="inline-flex items-center gap-2 px-4 py-2 border border-n-border text-xs font-mono text-n-muted hover:text-n-text hover:border-n-text transition-colors rounded">
+            <Flame className="w-3.5 h-3.5" />
+            the 100
           </Link>
         </div>
       </section>

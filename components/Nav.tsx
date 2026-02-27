@@ -39,6 +39,7 @@ export default function Nav() {
           {[
             { href: "/",            label: "home" },
             { href: "/leaderboard", label: "leaderboard" },
+            { href: "/the-100",     label: "the 100" },
           ].map((link) => (
             <Link
               key={link.href}

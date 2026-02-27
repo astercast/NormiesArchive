@@ -25,7 +25,7 @@ const PLAY_INTERVAL_MS = 400;
 export default function NormieDetailClient({ tokenId }: Props) {
   const {
     originalPixels, currentPixels, diff, diffAsIndices, heatmapData,
-    info, traits, editHistory, burnHistory, frames, isLoading, hasError, historyLoading, lifeStory, normieType,
+    info, traits, editHistory, burnHistory, frames, isLoading, hasError, historyLoading, historyError, historyRefetch, lifeStory, normieType,
   } = useNormieHistory(tokenId);
 
   const [step,           setStep]           = useState(0);
@@ -136,8 +136,9 @@ export default function NormieDetailClient({ tokenId }: Props) {
   const customized = info?.customized ?? (getAttribute("Customized") === "Yes");
   const type       = normieType ?? (getAttribute("Type") as string | undefined);
 
-  // Total pixels changed = sum of all edit changeCounts
-  const totalPixelsChanged = editHistory.reduce((s, e) => s + e.changeCount, 0);
+  // actionPoints = total unique pixels ever touched by canvas (= transform layer 1-bits)
+  // This is the authoritative "pixels changed" number from the contract
+  const totalPixelsChanged = info?.actionPoints ?? 0;
 
   // ── Loading state ──────────────────────────────────────────────────────────
   if (isLoading && !currentPixels) {
@@ -235,6 +236,23 @@ export default function NormieDetailClient({ tokenId }: Props) {
         ))}
       </div>
 
+      {/* Delegate banner — only shown when a delegate is set */}
+      {info?.delegate && info.delegate !== "0x0000000000000000000000000000000000000000" && (
+        <div className="flex items-center gap-2 px-4 py-2.5 border border-n-border rounded bg-n-surface text-xs font-mono text-n-muted">
+          <span className="text-n-faint">delegate</span>
+          <a
+            href={`https://etherscan.io/address/${info.delegate}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-n-text hover:underline flex items-center gap-1"
+          >
+            {info.delegate.slice(0, 6)}…{info.delegate.slice(-4)}
+            <ExternalLink className="w-2.5 h-2.5" />
+          </a>
+          <span className="text-n-faint ml-1">authorized to transform pixels</span>
+        </div>
+      )}
+
       {/* Main layout */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
 
@@ -286,7 +304,7 @@ export default function NormieDetailClient({ tokenId }: Props) {
                   : "border-n-border text-n-muted hover:border-n-muted"
               }`}>
               {showHeatmap ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
-              heatmap
+              diff overlay
             </button>
             <button onClick={() => setShowParticles(!showParticles)}
               className={`flex items-center gap-1 px-2.5 py-1 border text-xs font-mono rounded transition-colors ${
@@ -344,11 +362,21 @@ export default function NormieDetailClient({ tokenId }: Props) {
                 {historyLoading
                   ? <span className="flex items-center justify-center gap-2">
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      loading on-chain history…
+                      scanning on-chain history…
                     </span>
-                  : customized
-                    ? "one edit — use play to animate"
-                    : "no edit history — pristine from mint"}
+                  : historyError
+                    ? <span className="flex flex-col items-center gap-2">
+                        <span className="text-n-muted">couldn&apos;t load history</span>
+                        <button
+                          onClick={() => historyRefetch()}
+                          className="px-2.5 py-1 border border-n-border rounded text-xs font-mono text-n-muted hover:text-n-text hover:border-n-text transition-colors"
+                        >
+                          retry
+                        </button>
+                      </span>
+                    : customized
+                      ? "one edit — use play to animate"
+                      : "no edit history — pristine from mint"}
               </div>
             )}
           </div>

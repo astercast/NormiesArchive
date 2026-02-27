@@ -56,7 +56,8 @@ export default function SpotlightFader() {
           entries = [...byId.values()];
         }
         if (entries.length > 0) {
-          const spotlight = entries.filter(n => n.level >= 2).sort((a, b) => b.level - a.level);
+          // Show all customized normies, sorted by level — no minimum level filter
+          const spotlight = [...entries].sort((a, b) => b.level - a.level || b.ap - a.ap);
           setNormies(spotlight);
           setIdx(0);
           setNextIdx(Math.min(1, spotlight.length - 1));
@@ -98,7 +99,16 @@ export default function SpotlightFader() {
     );
   }
 
-  if (!normies.length) return null;
+  if (!normies.length) {
+    return (
+      <section className="space-y-3">
+        <h2 className="text-xs font-mono text-n-muted uppercase tracking-widest">spotlight</h2>
+        <div className="border border-n-border bg-n-white rounded p-6 text-xs font-mono text-n-faint">
+          no customized normies found
+        </div>
+      </section>
+    );
+  }
 
   const current = normies[idx];
   const next    = normies[nextIdx];
@@ -107,10 +117,7 @@ export default function SpotlightFader() {
     <section className="space-y-3">
       <div className="flex items-center justify-between">
         <h2 className="text-xs font-mono text-n-muted uppercase tracking-widest">spotlight</h2>
-        <Link href={`/normie/${current.tokenId}`}
-          className="text-xs font-mono text-n-muted hover:text-n-text transition-colors flex items-center gap-1">
-          view history <ArrowRight className="w-3 h-3" />
-        </Link>
+
       </div>
 
       <div className="border border-n-border bg-n-white rounded p-6 flex flex-col sm:flex-row gap-6 items-start">
