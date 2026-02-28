@@ -17,6 +17,10 @@ interface Entry {
   rank:        number;
 }
 
+interface ListingMap {
+  [tokenId: number]: { price: number; currency: string };
+}
+
 interface The100Data {
   entries:     Entry[];
   scannedAt:   number;
@@ -65,6 +69,7 @@ export default function The100Client() {
   const [loading, setLoading]       = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [view, setView]             = useState<"list" | "grid">("list");
+  const [listings, setListings]     = useState<ListingMap>({});
 
   const fetchData = async (silent = false) => {
     if (silent) setRefreshing(true);
@@ -82,6 +87,23 @@ export default function The100Client() {
   };
 
   useEffect(() => { fetchData(); }, []);
+
+  // Fetch OpenSea listings for all entries once data loads
+  useEffect(() => {
+    if (!data?.entries?.length) return;
+    const newListings: ListingMap = {};
+    let done = 0;
+    for (const entry of data.entries) {
+      fetch(`/api/opensea?tokenId=${entry.tokenId}`)
+        .then(r => r.ok ? r.json() : null)
+        .then(d => {
+          if (d?.listed) newListings[entry.tokenId] = { price: d.price, currency: d.currency };
+          done++;
+          if (done === data.entries.length) setListings({ ...newListings });
+        })
+        .catch(() => { done++; });
+    }
+  }, [data]);
 
   return (
     <div className="space-y-5">
@@ -178,6 +200,11 @@ export default function The100Client() {
                     <div className="flex-1 min-w-0 flex items-center gap-2">
                       <span className="text-xs font-mono text-n-text">normie #{entry.tokenId}</span>
                       <TypeTag type={entry.type} />
+                      {listings[entry.tokenId] && (
+                        <span className="text-[9px] font-mono px-1.5 py-px rounded border border-blue-300 bg-blue-50 text-blue-600">
+                          {listings[entry.tokenId].price.toFixed(4)} Ξ
+                        </span>
+                      )}
                     </div>
                     <div className="flex flex-col items-end gap-0.5 flex-shrink-0">
                       <span className="text-[7px] sm:text-[10px] font-mono text-n-faint">block {entry.blockNumber.toLocaleString()}</span>
@@ -224,6 +251,11 @@ export default function The100Client() {
                     loading="lazy"
                   />
                   <GridRankBadge rank={entry.rank} />
+                  {listings[entry.tokenId] && (
+                    <span className="absolute bottom-1 left-0 right-0 text-center text-[8px] font-mono font-bold text-white bg-black/60 py-0.5">
+                      {listings[entry.tokenId].price.toFixed(3)}Ξ
+                    </span>
+                  )}
                 </Link>
               ))}
             </motion.div>

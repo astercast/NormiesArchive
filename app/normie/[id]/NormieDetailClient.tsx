@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import {
@@ -39,6 +40,8 @@ export default function NormieDetailClient({ tokenId }: Props) {
   const [particles,      setParticles]      = useState<{ added: number[]; removed: number[] }>({ added: [], removed: [] });
   const [isInThe100,     setIsInThe100]     = useState(false);
   const [the100Rank,     setThe100Rank]     = useState<number | null>(null);
+  const [listing,        setListing]        = useState<{ price: number; currency: string } | null>(null);
+  const router = useRouter();
 
   const playRef     = useRef<ReturnType<typeof setInterval> | null>(null);
   const prevStepRef = useRef(0);
@@ -65,6 +68,16 @@ export default function NormieDetailClient({ tokenId }: Props) {
         if (!data?.entries) return;
         const entry = data.entries.find((e: { tokenId: number; rank: number }) => e.tokenId === tokenId);
         if (entry) { setIsInThe100(true); setThe100Rank(entry.rank); }
+      })
+      .catch(() => {});
+  }, [tokenId]);
+
+  // Fetch OpenSea listing price
+  useEffect(() => {
+    fetch(`/api/opensea?tokenId=${tokenId}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data?.listed) setListing({ price: data.price, currency: data.currency });
       })
       .catch(() => {});
   }, [tokenId]);
@@ -159,9 +172,9 @@ export default function NormieDetailClient({ tokenId }: Props) {
     return (
       <div className="max-w-6xl mx-auto px-4 py-10">
         <div className="flex items-center gap-3 mb-8">
-          <Link href="/" className="text-n-muted hover:text-n-text transition-colors">
+          <button onClick={() => router.back()} className="text-n-muted hover:text-n-text transition-colors">
             <ArrowLeft className="w-4 h-4" />
-          </Link>
+          </button>
           <span className="font-mono text-2xl text-n-faint flex items-center gap-2">
             <Loader2 className="w-5 h-5 animate-spin" />
             loading normie #{tokenId}…
@@ -185,9 +198,9 @@ export default function NormieDetailClient({ tokenId }: Props) {
     return (
       <div className="max-w-6xl mx-auto px-4 py-10">
         <div className="flex items-center gap-3 mb-8">
-          <Link href="/" className="text-n-muted hover:text-n-text transition-colors">
+          <button onClick={() => router.back()} className="text-n-muted hover:text-n-text transition-colors">
             <ArrowLeft className="w-4 h-4" />
-          </Link>
+          </button>
           <h1 className="font-mono text-2xl font-medium text-n-text">normie #{tokenId}</h1>
         </div>
         <div className="flex items-center gap-3 text-n-muted font-mono text-sm border border-n-border rounded p-6">
@@ -215,6 +228,16 @@ export default function NormieDetailClient({ tokenId }: Props) {
           <span className="inline-flex items-center gap-1 text-[10px] font-mono font-bold px-2 py-px rounded border border-red-400 bg-red-50 text-red-600" title={`#${the100Rank} earliest editor`}>
             THE100{the100Rank && the100Rank <= 3 ? ` #${the100Rank}` : ""}
           </span>
+        )}
+        {listing && (
+          <a
+            href={`https://opensea.io/assets/ethereum/0x9Eb6E2025B64f340691e424b7fe7022fFDE12438/${tokenId}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-[10px] font-mono px-2 py-px rounded border border-blue-300 bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors"
+          >
+            {listing.price.toFixed(4)} {listing.currency}
+          </a>
         )}
 
         <div className="flex items-center gap-1.5 ml-auto flex-wrap">
