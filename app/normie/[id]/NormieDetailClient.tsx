@@ -37,6 +37,8 @@ export default function NormieDetailClient({ tokenId }: Props) {
   const [exportPct,      setExportPct]      = useState(0);
   const [copied,         setCopied]         = useState(false);
   const [particles,      setParticles]      = useState<{ added: number[]; removed: number[] }>({ added: [], removed: [] });
+  const [isInThe100,     setIsInThe100]     = useState(false);
+  const [the100Rank,     setThe100Rank]     = useState<number | null>(null);
 
   const playRef     = useRef<ReturnType<typeof setInterval> | null>(null);
   const prevStepRef = useRef(0);
@@ -54,6 +56,18 @@ export default function NormieDetailClient({ tokenId }: Props) {
       return () => clearTimeout(t);
     }
   }, [info?.level, soundOn]);
+
+  // Check if this normie is in The 100
+  useEffect(() => {
+    fetch(`/api/the-100?v=${Math.floor(Date.now() / 300000)}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (!data?.entries) return;
+        const entry = data.entries.find((e: { tokenId: number; rank: number }) => e.tokenId === tokenId);
+        if (entry) { setIsInThe100(true); setThe100Rank(entry.rank); }
+      })
+      .catch(() => {});
+  }, [tokenId]);
 
   const stopPlay = useCallback(() => {
     setIsPlaying(false);
@@ -197,6 +211,11 @@ export default function NormieDetailClient({ tokenId }: Props) {
         {type       && <span className="tag">{type.toLowerCase()}</span>}
         {customized && <span className="tag tag-active">customized</span>}
         {level > 1  && <span className="tag tag-active">lvl {level}</span>}
+        {isInThe100 && (
+          <span className="inline-flex items-center gap-1 text-[10px] font-mono font-bold px-2 py-px rounded border border-red-400 bg-red-50 text-red-600" title={`#${the100Rank} earliest editor`}>
+            THE100{the100Rank && the100Rank <= 3 ? ` #${the100Rank}` : ""}
+          </span>
+        )}
 
         <div className="flex items-center gap-1.5 ml-auto flex-wrap">
           <button onClick={handleToggleSound} title={soundOn ? "mute" : "sound on"}

@@ -59,7 +59,7 @@ async function blobGet(key) {
   try {
     const info = await head(key);
     if (!info) return null;
-    const res = await fetch(info.url, { cache: "no-store" });
+    const res = await fetch(info.url);
     if (!res.ok) return null;
     return res.json();
   } catch {
@@ -72,6 +72,7 @@ async function blobPut(key, data) {
     access: "public",
     contentType: "application/json",
     addRandomSuffix: false,
+    allowOverwrite: true,
   });
 }
 
@@ -110,7 +111,7 @@ async function scanRange(from, to, event) {
 
 async function fetchWithRetry(url, attempt = 0) {
   try {
-    const res = await fetch(url, { cache: "no-store" });
+    const res = await fetch(url);
     if (res.status === 429 && attempt < 5) {
       const wait = parseInt(res.headers.get("Retry-After") ?? "3", 10);
       console.log(`  rate limited, waiting ${wait * (attempt + 1)}s…`);

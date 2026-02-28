@@ -1,9 +1,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
-import { Loader2, RefreshCw, ExternalLink } from "lucide-react";
+import { Loader2, RefreshCw, ExternalLink, List, Grid } from "lucide-react";
 
 const BASE = "https://api.normies.art";
 const ETHERSCAN = "https://etherscan.io/tx";
@@ -47,10 +47,24 @@ function RankBadge({ rank }: { rank: number }) {
   return <span className="w-8 text-center text-xs font-mono text-n-faint flex-shrink-0">#{rank}</span>;
 }
 
+function GridRankBadge({ rank }: { rank: number }) {
+  const color =
+    rank === 1 ? "text-amber-500" :
+    rank === 2 ? "text-slate-400" :
+    rank === 3 ? "text-orange-400" :
+    "text-n-faint";
+  return (
+    <span className={`absolute top-1 left-1 text-[9px] font-mono font-bold leading-none bg-black/60 rounded px-1 py-0.5 ${color}`}>
+      #{rank}
+    </span>
+  );
+}
+
 export default function The100Client() {
-  const [data, setData]         = useState<The100Data | null>(null);
-  const [loading, setLoading]   = useState(true);
+  const [data, setData]             = useState<The100Data | null>(null);
+  const [loading, setLoading]       = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [view, setView]             = useState<"list" | "grid">("list");
 
   const fetchData = async (silent = false) => {
     if (silent) setRefreshing(true);
@@ -73,7 +87,27 @@ export default function The100Client() {
     <div className="space-y-5">
 
       {/* Meta row */}
-      <div className="flex items-center justify-end flex-wrap gap-2">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        {/* View toggle */}
+        <div className="flex items-center gap-1 border border-n-border rounded p-0.5">
+          <button
+            onClick={() => setView("list")}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-mono transition-colors ${
+              view === "list" ? "bg-n-text text-n-bg" : "text-n-muted hover:text-n-text"
+            }`}
+          >
+            <List className="w-3 h-3" /> list
+          </button>
+          <button
+            onClick={() => setView("grid")}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-mono transition-colors ${
+              view === "grid" ? "bg-n-text text-n-bg" : "text-n-muted hover:text-n-text"
+            }`}
+          >
+            <Grid className="w-3 h-3" /> 10×10
+          </button>
+        </div>
+
         <div className="flex items-center gap-3">
           {data && (
             <span className="text-xs font-mono text-n-faint">
@@ -100,7 +134,7 @@ export default function The100Client() {
         </p>
       </div>
 
-      {/* List */}
+      {/* Content */}
       {loading ? (
         <div className="flex items-center gap-3 py-16 text-n-faint font-mono text-xs">
           <Loader2 className="w-4 h-4 animate-spin" />
@@ -109,61 +143,93 @@ export default function The100Client() {
       ) : !data || data.entries.length === 0 ? (
         <p className="text-xs font-mono text-n-faint py-8 text-center">No data yet.</p>
       ) : (
-        <motion.div
-          initial={{ opacity: 0, y: 4 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.2 }}
-          className="space-y-1"
-        >
-          {data.entries.map((entry, i) => (
+        <AnimatePresence mode="wait">
+          {view === "list" ? (
+
+            /* ── List view ── */
             <motion.div
-              key={entry.tokenId}
-              initial={{ opacity: 0, y: 6 }}
+              key="list"
+              initial={{ opacity: 0, y: 4 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.12, delay: Math.min(i * 0.008, 0.4) }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.15 }}
+              className="space-y-1"
             >
-              <Link
-                href={`/normie/${entry.tokenId}`}
-                className="group flex items-center gap-3 px-3 py-2.5 border border-n-border rounded hover:border-n-text hover:bg-n-surface transition-all"
-              >
-                <RankBadge rank={entry.rank} />
-
-                {/* Thumbnail */}
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={`${BASE}/normie/${entry.tokenId}/image.svg`}
-                  alt={`#${entry.tokenId}`}
-                  width={32} height={32}
-                  className="pixelated border border-n-border rounded bg-n-bg flex-shrink-0 group-hover:scale-110 transition-transform"
-                  loading="lazy"
-                />
-
-                {/* Token ID + type */}
-                <div className="flex-1 min-w-0 flex items-center gap-2">
-                  <span className="text-xs font-mono text-n-text">normie #{entry.tokenId}</span>
-                  <TypeTag type={entry.type} />
-                </div>
-
-                {/* Block + tx link */}
-                <div className="flex flex-col items-end gap-0.5 flex-shrink-0">
-                  <span className="text-[7px] sm:text-[10px] font-mono text-n-faint">block {entry.blockNumber.toLocaleString()}</span>
-                  <span className="text-[8px] sm:text-[10px] font-mono text-n-faint">Δ{entry.changeCount}px</span>
-                </div>
-
-                <a
-                  href={`${ETHERSCAN}/${entry.txHash}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={e => e.stopPropagation()}
-                  className="flex-shrink-0 text-n-faint hover:text-n-text transition-colors p-1 -mr-1"
-                  title="View transaction on Etherscan"
+              {data.entries.map((entry, i) => (
+                <motion.div
+                  key={entry.tokenId}
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.12, delay: Math.min(i * 0.008, 0.4) }}
                 >
-                  <ExternalLink className="w-3 h-3" />
-                </a>
-              </Link>
+                  <Link
+                    href={`/normie/${entry.tokenId}`}
+                    className="group flex items-center gap-3 px-3 py-2.5 border border-n-border rounded hover:border-n-text hover:bg-n-surface transition-all"
+                  >
+                    <RankBadge rank={entry.rank} />
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={`${BASE}/normie/${entry.tokenId}/image.svg`}
+                      alt={`#${entry.tokenId}`}
+                      width={32} height={32}
+                      className="pixelated border border-n-border rounded bg-n-bg flex-shrink-0 group-hover:scale-110 transition-transform"
+                      loading="lazy"
+                    />
+                    <div className="flex-1 min-w-0 flex items-center gap-2">
+                      <span className="text-xs font-mono text-n-text">normie #{entry.tokenId}</span>
+                      <TypeTag type={entry.type} />
+                    </div>
+                    <div className="flex flex-col items-end gap-0.5 flex-shrink-0">
+                      <span className="text-[7px] sm:text-[10px] font-mono text-n-faint">block {entry.blockNumber.toLocaleString()}</span>
+                      <span className="text-[8px] sm:text-[10px] font-mono text-n-faint">Δ{entry.changeCount}px</span>
+                    </div>
+                    <a
+                      href={`${ETHERSCAN}/${entry.txHash}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={e => e.stopPropagation()}
+                      className="flex-shrink-0 text-n-faint hover:text-n-text transition-colors p-1 -mr-1"
+                      title="View transaction on Etherscan"
+                    >
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                  </Link>
+                </motion.div>
+              ))}
             </motion.div>
-          ))}
-        </motion.div>
+
+          ) : (
+
+            /* ── 10×10 Grid view ── */
+            <motion.div
+              key="grid"
+              initial={{ opacity: 0, y: 4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.15 }}
+              className="grid grid-cols-10 gap-1.5"
+            >
+              {data.entries.map((entry) => (
+                <Link
+                  key={entry.tokenId}
+                  href={`/normie/${entry.tokenId}`}
+                  className="group relative aspect-square border border-n-border rounded overflow-hidden hover:border-n-text transition-all hover:scale-105 hover:z-10"
+                  title={`normie #${entry.tokenId} · rank #${entry.rank}`}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={`${BASE}/normie/${entry.tokenId}/image.svg`}
+                    alt={`#${entry.tokenId}`}
+                    className="w-full h-full pixelated"
+                    loading="lazy"
+                  />
+                  <GridRankBadge rank={entry.rank} />
+                </Link>
+              ))}
+            </motion.div>
+
+          )}
+        </AnimatePresence>
       )}
     </div>
   );
