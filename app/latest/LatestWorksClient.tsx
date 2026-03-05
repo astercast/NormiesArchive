@@ -197,7 +197,7 @@ export default function LatestWorksClient() {
     if (silent) setRefreshing(true);
     else setLoading(true);
     try {
-      const res = await fetch(`/api/latest?count=10&v=${Date.now()}`);
+      const res = await fetch(`/api/latest?count=12&v=${Date.now()}`);
       if (!res.ok) throw new Error("fetch failed");
       const d: LatestData = await res.json();
 
