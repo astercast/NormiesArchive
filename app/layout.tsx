@@ -63,6 +63,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <div className="flex items-center gap-4">
                 <a href="https://normies.art" target="_blank" rel="noopener noreferrer"
                    className="hover:text-n-text transition-colors">normies.art ↗</a>
+                <a href="https://opensea.io/collection/normies" target="_blank" rel="noopener noreferrer"
+                   className="hover:text-n-text transition-colors">opensea ↗</a>
                 <span>built by <a href="https://x.com/aster0x" target="_blank" rel="noopener noreferrer"
                    className="hover:text-n-text transition-colors">@aster0x</a></span>
               </div>

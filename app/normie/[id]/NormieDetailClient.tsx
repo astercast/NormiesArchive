@@ -72,12 +72,13 @@ export default function NormieDetailClient({ tokenId }: Props) {
       .catch(() => {});
   }, [tokenId]);
 
-  // Fetch OpenSea listing price
+  // Fetch OpenSea listing price — always fresh (cache-busted per page load)
   useEffect(() => {
-    fetch(`/api/opensea?tokenId=${tokenId}`)
+    fetch(`/api/opensea?tokenId=${tokenId}&_=${Date.now()}`)
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         if (data?.listed) setListing({ price: data.price, currency: data.currency });
+        else setListing(null);
       })
       .catch(() => {});
   }, [tokenId]);
