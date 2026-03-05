@@ -301,6 +301,18 @@ export default function NormieDetailClient({ tokenId }: Props) {
 
         {/* Left: Canvas */}
         <div className="space-y-3">
+
+          {/* Step label — above the canvas */}
+          <div className="flex items-center justify-between h-5">
+            <span className="px-1.5 py-0.5 border border-n-border text-xs font-mono text-n-muted rounded bg-n-surface">
+              {step === 0
+                ? "origin"
+                : step === maxStep
+                  ? "current"
+                  : `edit ${step} / ${maxStep}`}
+            </span>
+          </div>
+
           <div
             className="relative border border-n-border rounded overflow-hidden w-full"
             style={{ aspectRatio: "1 / 1", maxWidth: GRID_SIZE * SCALE }}
@@ -320,15 +332,6 @@ export default function NormieDetailClient({ tokenId }: Props) {
                 active={particles.added.length > 0 || particles.removed.length > 0}
               />
             )}
-
-            {/* Step badge */}
-            <div className="absolute top-1.5 left-1.5 px-1.5 py-0.5 bg-n-bg/80 border border-n-border text-xs font-mono text-n-muted rounded backdrop-blur-sm">
-              {step === 0
-                ? "origin"
-                : step === maxStep
-                  ? "current"
-                  : `edit ${step} / ${maxStep}`}
-            </div>
 
             {/* Loading overlay for frames */}
             {historyLoading && currentFrame && (
