@@ -2,7 +2,7 @@
  * Per-token event history fetcher.
  *
  * Problem: public RPCs cap getLogs to ~10k-50k blocks per call.
- * Scanning from block 19,600,000 to ~22,000,000 (2.4M blocks) in one call fails.
+ * Scanning from block 19,614,531 to ~22,000,000 (2.4M blocks) in one call fails.
  *
  * Solution:
  *  1. Chunk getLogs into 50k-block windows, run in parallel batches of 5
@@ -13,7 +13,7 @@
 import { parseAbiItem } from "viem";
 import { publicClient, CANVAS_ADDRESS } from "./viemClient";
 
-export const DEPLOY_BLOCK = 19_600_000n;
+export const DEPLOY_BLOCK = 19_614_531n;
 const CHUNK = 50_000n;       // Safe for all public RPCs
 const PARALLEL = 5;          // Concurrent chunk fetches
 const TTL_MS = 10 * 60_000;  // 10 min cache per token

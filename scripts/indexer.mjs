@@ -3,6 +3,17 @@
  * Scans Ethereum for NormiesCanvas events, fetches normie details,
  * and writes the result to Vercel Blob storage.
  *
+ * ┌─────────────────────────────────────────────────────────────────────┐
+ * │  IMPORTANT: This file intentionally duplicates the scan/merge/write │
+ * │  pipeline in lib/indexer.ts.  GitHub Actions runs plain Node.js and │
+ * │  cannot import TypeScript directly, so the logic lives here as JS.  │
+ * │                                                                     │
+ * │  Any change to indexing logic — block constants, retry strategy,   │
+ * │  merge helpers, normie-detail fetching — must be applied to BOTH:  │
+ * │    • scripts/indexer.mjs  (this file — GitHub Actions cron job)    │
+ * │    • lib/indexer.ts       (Next.js server — /api/cron/index route) │
+ * └─────────────────────────────────────────────────────────────────────┘
+ *
  * Usage:
  *   BLOB_READ_WRITE_TOKEN=xxx node scripts/indexer.mjs
  *

@@ -179,11 +179,71 @@ function seededShuffle<T>(arr: T[], seed: number): T[] {
 }
 
 /**
+ * Build animation frames from the on-chain XOR transform layer + edit history.
+ *
+ * This is the accurate path used by the per-normie detail view: it uses the
+ * exact flipped-pixel bitmap from the contract (transformLayer is the XOR mask)
+ * rather than computing deltas from a before/after string diff.
+ *
+ * Distributes flipped pixels proportionally across edits using their changeCount,
+ * with a deterministic LCG shuffle keyed on the normie's transform state.
+ */
+export function buildTransformFrames(
+  original: string,
+  transformLayer: string,
+  edits: Array<{ changeCount: number }>
+): string[] {
+  // Collect pixel indices the transform layer flipped
+  const flipped: number[] = [];
+  for (let i = 0; i < 1600; i++) {
+    if (transformLayer[i] === "1") flipped.push(i);
+  }
+
+  if (flipped.length === 0 || edits.length === 0) {
+    if (flipped.length === 0) return [original];
+    const arr = original.split("");
+    for (const i of flipped) arr[i] = arr[i] === "1" ? "0" : "1";
+    return [original, arr.join("")];
+  }
+
+  // Deterministic shuffle — same normie always produces the same animation
+  const seed = flipped.length * 31337 + edits.length * 7919;
+  const shuffled = seededShuffle(flipped, seed);
+
+  const totalChanges = edits.reduce((s, e) => s + e.changeCount, 0) || 1;
+  const current = original.split("");
+  const frames: string[] = [original];
+  let applied = 0;
+
+  for (let i = 0; i < edits.length; i++) {
+    const cumulative = edits.slice(0, i + 1).reduce((s, e) => s + e.changeCount, 0);
+    const target = Math.min(Math.round((cumulative / totalChanges) * shuffled.length), shuffled.length);
+    while (applied < target) {
+      const idx = shuffled[applied++];
+      current[idx] = current[idx] === "1" ? "0" : "1";
+    }
+    // Last edit frame: apply any remaining pixels to guarantee exact final state
+    if (i === edits.length - 1) {
+      while (applied < shuffled.length) {
+        const idx = shuffled[applied++];
+        current[idx] = current[idx] === "1" ? "0" : "1";
+      }
+    }
+    frames.push(current.join(""));
+  }
+
+  return frames; // frames.length === edits.length + 1  (origin + one frame per edit)
+}
+
+/**
  * Simulate pixel evolution across edit events.
  *
  * Strategy: we know the original, the final, and per-edit changeCount values.
  * Distribute the net changed pixels proportionally across edits, using a
  * deterministic shuffle so the same normie always produces the same animation.
+ *
+ * Used when only the original + current pixel strings are available (e.g. the
+ * Latest Works feed) rather than the on-chain XOR transform layer.
  */
 export function buildSimulatedFrames(
   originalStr: string,

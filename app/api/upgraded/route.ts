@@ -1,10 +1,9 @@
 import { NextResponse } from "next/server";
 import { getUpgradedNormies } from "@/lib/indexer";
 
-// ISR: Vercel CDN serves cached response instantly.
-// Background revalidation runs every 5 minutes.
-// First-ever call may take ~10-15s; every subsequent call is <50ms from edge.
-export const revalidate = 300; // 5 minutes
+// force-dynamic: consistent with all other API routes.
+// Cache is controlled manually via Cache-Control headers below.
+export const dynamic     = "force-dynamic";
 export const maxDuration = 300;
 
 export async function GET() {
