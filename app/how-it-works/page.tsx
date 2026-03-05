@@ -162,6 +162,13 @@ export default function HowItWorksPage() {
 
       <div className="border-t border-n-border" />
 
+      {/* Built by */}
+      <p className="text-xs font-mono text-n-muted">
+        built by{" "}
+        <a href="https://x.com/aster0x" target="_blank" rel="noopener noreferrer"
+           className="hover:text-n-text transition-colors">@aster0x</a>
+      </p>
+
       {/* CTA */}
       <div className="flex flex-wrap gap-3">
         <Link href="/leaderboard"

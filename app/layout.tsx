@@ -60,8 +60,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-n-muted font-mono">
               <span>NORMIE ETERNAL ARCHIVE</span>
               <span>10,000 on-chain faces · all history preserved</span>
-              <a href="https://normies.art" target="_blank" rel="noopener noreferrer"
-                 className="hover:text-n-text transition-colors">normies.art ↗</a>
+              <div className="flex items-center gap-4">
+                <a href="https://normies.art" target="_blank" rel="noopener noreferrer"
+                   className="hover:text-n-text transition-colors">normies.art ↗</a>
+                <span>built by <a href="https://x.com/aster0x" target="_blank" rel="noopener noreferrer"
+                   className="hover:text-n-text transition-colors">@aster0x</a></span>
+              </div>
             </div>
           </footer>
         </Providers>
