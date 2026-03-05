@@ -53,13 +53,13 @@ function RankBadge({ rank }: { rank: number }) {
 
 function GridRankBadge({ rank }: { rank: number }) {
   const color =
-    rank === 1 ? "text-amber-500" :
-    rank === 2 ? "text-slate-400" :
+    rank === 1 ? "text-amber-400" :
+    rank === 2 ? "text-slate-300" :
     rank === 3 ? "text-orange-400" :
-    "text-n-faint";
+    "text-white/80";
   return (
-    <span className={`absolute top-1 left-1 text-[9px] font-mono font-bold leading-none bg-black/60 rounded px-1 py-0.5 ${color}`}>
-      #{rank}
+    <span className={`absolute top-0.5 left-0.5 text-[6px] sm:text-[7px] font-mono font-bold leading-none bg-black/80 rounded-sm px-0.5 py-px ${color}`}>
+      {rank <= 9 ? `#${rank}` : rank}
     </span>
   );
 }
@@ -201,9 +201,15 @@ export default function The100Client() {
                       <span className="text-xs font-mono text-n-text">normie #{entry.tokenId}</span>
                       <TypeTag type={entry.type} />
                       {listings[entry.tokenId] && (
-                        <span className="text-[9px] font-mono px-1.5 py-px rounded border border-blue-300 bg-blue-50 text-blue-600">
+                        <a
+                          href={`https://opensea.io/assets/ethereum/0x9Eb6E2025B64f340691e424b7fe7022fFDE12438/${entry.tokenId}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={e => e.stopPropagation()}
+                          className="text-[9px] font-mono px-1.5 py-px rounded border border-blue-300 bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors"
+                        >
                           {listings[entry.tokenId].price.toFixed(4)} Ξ
-                        </span>
+                        </a>
                       )}
                     </div>
                     <div className="flex flex-col items-end gap-0.5 flex-shrink-0">
