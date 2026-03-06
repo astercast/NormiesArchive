@@ -76,6 +76,18 @@ export default function HowItWorksPage() {
         <p className="text-sm font-mono text-n-muted leading-relaxed">
           the final displayed Normie is always: <code className="bg-n-surface px-1.5 py-0.5 rounded text-n-text">original XOR transform_layer</code>. every 1-bit in the transform layer flips the corresponding pixel. the original is never destroyed — it always exists underneath.
         </p>
+        <p className="text-sm font-mono text-n-muted leading-relaxed">
+          you can interact with NormiesCanvas at{" "}
+          <a
+            href="https://www.normies.art/lab"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-n-text underline underline-offset-2 hover:opacity-70 transition-opacity"
+          >
+            normies.art/lab
+          </a>
+          .
+        </p>
       </Section>
 
       {/* ── PART 3: AP & BURNING ── */}
