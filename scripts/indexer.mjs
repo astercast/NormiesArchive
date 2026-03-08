@@ -140,15 +140,21 @@ async function fetchWithRetry(url, attempt = 0) {
 }
 
 async function fetchNormieDetails(id, editCount) {
+  const fallback = { id, level: 1, ap: 0, added: 0, removed: 0, editCount, type: "Human" };
   try {
     const [infoRes, diffRes, traitsRes] = await Promise.all([
       fetchWithRetry(`${BASE_API}/normie/${id}/canvas/info`),
       fetchWithRetry(`${BASE_API}/normie/${id}/canvas/diff`),
       fetchWithRetry(`${BASE_API}/normie/${id}/traits`),
     ]);
-    if (!infoRes.ok) return null;
+    // 404 = token truly not found; other errors → keep fallback so the normie isn't dropped
+    if (infoRes.status === 404) return null;
+    if (!infoRes.ok) {
+      console.log(`  canvas/info ${id} returned ${infoRes.status} — using fallback`);
+      return fallback;
+    }
     const info = await infoRes.json();
-    if (!info.customized) return null;
+    if (!info.customized) return null; // canvas reset to all-zeros: genuinely un-customized
     const diff   = diffRes.ok   ? await diffRes.json()   : { addedCount: 0, removedCount: 0 };
     const traits = traitsRes.ok ? await traitsRes.json() : { attributes: [] };
     const type   = traits.attributes?.find(a => a.trait_type === "Type")?.value ?? "Human";
@@ -158,8 +164,8 @@ async function fetchNormieDetails(id, editCount) {
       editCount, type: String(type),
     };
   } catch (err) {
-    console.warn(`  fetchNormieDetails(${id}) failed:`, err.message);
-    return null;
+    console.warn(`  fetchNormieDetails(${id}) threw — using fallback:`, err.message);
+    return fallback;
   }
 }
 

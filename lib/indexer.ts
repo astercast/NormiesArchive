@@ -164,15 +164,21 @@ async function fetchWithRetry(url: string, attempt = 0): Promise<Response> {
 }
 
 async function fetchNormieDetails(id: number, editCount: number): Promise<UpgradedNormie | null> {
+  const fallback: UpgradedNormie = { id, level: 1, ap: 0, added: 0, removed: 0, editCount, type: "Human" };
   try {
     const [infoRes, diffRes, traitsRes] = await Promise.all([
       fetchWithRetry(`${BASE_API}/normie/${id}/canvas/info`),
       fetchWithRetry(`${BASE_API}/normie/${id}/canvas/diff`),
       fetchWithRetry(`${BASE_API}/normie/${id}/traits`),
     ]);
-    if (!infoRes.ok) return null;
+    // 404 = token truly not found; other errors → keep fallback so the normie isn't dropped
+    if (infoRes.status === 404) return null;
+    if (!infoRes.ok) {
+      console.warn(`[indexer] canvas/info ${id} returned ${infoRes.status} — using fallback`);
+      return fallback;
+    }
     const info = await infoRes.json();
-    if (!info.customized) return null;
+    if (!info.customized) return null; // canvas reset to all-zeros: genuinely un-customized
     const diff   = diffRes.ok   ? await diffRes.json()   : { addedCount: 0, removedCount: 0 };
     const traits = traitsRes.ok ? await traitsRes.json() : { attributes: [] };
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -182,7 +188,10 @@ async function fetchNormieDetails(id: number, editCount: number): Promise<Upgrad
       added: diff.addedCount ?? 0, removed: diff.removedCount ?? 0,
       editCount, type: String(type),
     };
-  } catch { return null; }
+  } catch (err) {
+    console.warn(`[indexer] fetchNormieDetails(${id}) threw — using fallback:`, err);
+    return fallback;
+  }
 }
 
 // ─── Merge helpers ────────────────────────────────────────────────────────────
@@ -459,7 +468,7 @@ export async function getLeaderboards() {
     mostEdited:   mostEdited.slice(0, 50).map(n => ({ tokenId: n.id, value: n.editCount, label: "edits",  type: n.type })),
     highestLevel: highestLevel.slice(0, 50).map(n => ({ tokenId: n.id, value: n.level,   label: "level",  type: n.type })),
     mostAp:       mostAp.slice(0, 50).map(n => ({ tokenId: n.id, value: n.ap,        label: "AP",    type: n.type })),
-    totalCustomized: normies.length,
+    totalCustomized: cache.editsByToken.size, // all unique normies with any PixelsTransformed event
     scannedAt,
     latestBlock,
   };
