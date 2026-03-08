@@ -449,6 +449,20 @@ export default function NormieDetailClient({ tokenId }: Props) {
                 <span className="text-xs font-mono text-n-faint">{editHistory.length} event{editHistory.length !== 1 ? "s" : ""}</span>
               </div>
               <div className="divide-y divide-n-border max-h-56 overflow-y-auto">
+                {/* Origin row — step 0 */}
+                <motion.div
+                  initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+                  onClick={() => handleStep(0)}
+                  className={`px-4 py-2.5 flex items-center gap-3 cursor-pointer hover:bg-n-surface transition-colors ${
+                    step === 0 ? "bg-n-surface border-l-2 border-n-text" : ""
+                  }`}
+                >
+                  <span className="text-xs font-mono text-n-faint w-4 text-center">0</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs font-mono text-n-text">origin</div>
+                    <div className="text-xs font-mono text-n-muted">mint state</div>
+                  </div>
+                </motion.div>
                 {editHistory.map((edit, i) => (
                   <motion.div
                     key={edit.txHash}
