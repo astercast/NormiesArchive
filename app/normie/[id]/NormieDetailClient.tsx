@@ -43,14 +43,28 @@ export default function NormieDetailClient({ tokenId }: Props) {
   const [listing,        setListing]        = useState<{ price: number; currency: string } | null>(null);
   const router = useRouter();
 
-  const playRef     = useRef<ReturnType<typeof setInterval> | null>(null);
-  const prevStepRef = useRef(0);
+  const playRef       = useRef<ReturnType<typeof setInterval> | null>(null);
+  const prevStepRef   = useRef(0);
+  const framesLoaded  = useRef(false);
 
-  const maxStep      = Math.max(0, frames.length - 1);
-  const currentFrame = frames[step] ?? currentPixels ?? originalPixels ?? "";
+  const maxStep = Math.max(0, frames.length - 1);
+  // At the latest step, always use currentPixels as ground truth (avoids stale Ponder version pixel);
+  // otherwise use the historical frame; fall back to currentPixels / originalPixels while frames load.
+  const currentFrame =
+    (step === maxStep && maxStep > 0 && currentPixels)
+      ? currentPixels
+      : (frames[step] ?? currentPixels ?? originalPixels ?? "");
 
   const emptyHeat    = useMemo(() => new Float32Array(PIXEL_COUNT), []);
   const activeHeatmap = showHeatmap ? (heatmapData ?? emptyHeat) : emptyHeat;
+
+  // Jump to the latest frame the first time frames arrive so the user sees the current look by default.
+  useEffect(() => {
+    if (frames.length > 1 && !framesLoaded.current) {
+      framesLoaded.current = true;
+      setStep(frames.length - 1);
+    }
+  }, [frames.length]);
 
   // Level-up sound
   useEffect(() => {
