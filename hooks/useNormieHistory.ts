@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMemo } from "@tanstack/react-query";
 import { diffStrings, coordsToIndices, PIXEL_COUNT, GRID_SIZE, buildTransformFrames } from "@/lib/pixelUtils";
 
 const BASE = "https://api.normies.art";
@@ -113,9 +113,11 @@ export function useNormieHistory(tokenId: number) {
     retryDelay: attempt => Math.min(1500 * 2 ** attempt, 10_000),
   });
 
-  // Fetch actual composited pixel state at each version from api.normies.art.
-  // Uses the version number from the Ponder API (v.version) when available,
-  // falling back to array position for blob-sourced history.
+  // Fetch the actual composited pixel state at each chronological edit from api.normies.art.
+  // IMPORTANT: The Ponder `version/N/pixels` endpoint uses 0-indexed CHRONOLOGICAL order
+  // (0 = state after 1st edit, N-1 = current state). This is the OPPOSITE of the `version`
+  // field in the `versions` list (which numbers 0 = newest, N-1 = oldest). Always use the
+  // positional array index, never edits[i].version, as the path param.
   const editCount = history.data?.edits.length ?? 0;
   const versionPixels = useQuery({
     queryKey: ["normie", tokenId, "version-pixels", editCount],
@@ -128,8 +130,8 @@ export function useNormieHistory(tokenId: number) {
         const end = Math.min(i + BATCH, edits.length);
         const fetches = await Promise.allSettled(
           Array.from({ length: end - i }, (_, j) => {
-            // Use actual Ponder version number if present, else positional index
-            const vNum = edits[i + j].version ?? (i + j);
+            // Positional (chronological) index — NOT edits[i+j].version which is reversed
+            const vNum = i + j;
             return fetchText(`${BASE}/history/normie/${tokenId}/version/${vNum}/pixels`).then(validatePixels);
           })
         );
@@ -147,41 +149,41 @@ export function useNormieHistory(tokenId: number) {
     retry:     1,
   });
 
-  // True historical frames: [origin, actual pixels after version 0, after version 1, ...]
-  // Falls back to the seeded-shuffle simulation per frame only if a version fetch fails.
-  // Key includes editCount so old simulated-frame cache is never served here.
-  const frames = useQuery({
-    queryKey: ["normie", tokenId, "frames", editCount],
-    queryFn:  () => {
-      const orig  = originalPixels.data!;
-      const edits = history.data!.edits;
-      const vp    = versionPixels.data!;
+  // Historical frames: [origin, state-after-edit-1, state-after-edit-2, ...]
+  //
+  // Shows simulation frames (buildTransformFrames) immediately as soon as
+  // originalPixels + transformLayer + history are ready — no waiting for version pixels.
+  // Automatically upgrades each frame to the real Ponder pixel state as versionPixels loads.
+  const frames = useMemo(() => {
+    if (!originalPixels.data || !history.data) return [];
+    const orig  = originalPixels.data;
+    const edits = history.data.edits;
 
-      if (edits.length === 0 || vp.length === 0) return [orig];
+    if (edits.length === 0) return [orig];
 
-      // Simulated frames as per-step fallback when a version pixel fetch failed.
-      // Requires transformLayer (single fast fetch) — always available by this point
-      // since versionPixels takes much longer (multiple batched fetches).
-      const simulated = transformLayer.data
-        ? buildTransformFrames(orig, transformLayer.data, edits)
-        : null;
+    // Simulation: proportional XOR-flip distribution across edits. Used immediately
+    // and as a per-frame fallback if a specific version pixel fetch fails.
+    const simulated = transformLayer.data
+      ? buildTransformFrames(orig, transformLayer.data, edits)
+      : null;
 
-      const frameList: string[] = [orig];
-      for (let i = 0; i < edits.length; i++) {
-        const actual = vp[i];
-        // Use actual pixel state; fall back to simulation; last resort: keep previous frame
-        frameList.push(
-          (actual && actual.length === 1600)
-            ? actual
-            : (simulated?.[i + 1] ?? frameList[frameList.length - 1])
-        );
-      }
-      return frameList;
-    },
-    enabled:   !!(originalPixels.data && versionPixels.isSuccess && history.data),
-    staleTime: Infinity,
-    gcTime:    Infinity,
-  });
+    const vp = versionPixels.data;
+
+    // No version pixels yet → use pure simulation so the timeline is usable right away
+    if (!vp || vp.length === 0) return simulated ?? [orig];
+
+    // Version pixels available → prefer real state, fall back to simulated per frame
+    const frameList: string[] = [orig];
+    for (let i = 0; i < edits.length; i++) {
+      const actual = vp[i];
+      frameList.push(
+        (actual && actual.length === 1600)
+          ? actual
+          : (simulated?.[i + 1] ?? frameList[frameList.length - 1])
+      );
+    }
+    return frameList;
+  }, [originalPixels.data, history.data, transformLayer.data, versionPixels.data]);
 
   // Diff overlay: 2=added (green), 1=removed (red), 0=untouched
   // Built from canvas/diff — shows exactly which pixels were added vs removed vs original
@@ -221,7 +223,7 @@ export function useNormieHistory(tokenId: number) {
     traits:         traits.data,
     editHistory,
     burnHistory,
-    frames:         frames.data ?? [],
+    frames,
     isLoading,
     hasError,
     historyLoading: history.isLoading || versionPixels.isFetching,
