@@ -194,6 +194,24 @@ async function fetchNormieDetails(id: number, editCount: number): Promise<Upgrad
   }
 }
 
+// Fetch canvas info + traits for a normie that received burns but hasn't edited pixels.
+// Does NOT require customized=true — just needs AP > 0 to confirm burns happened.
+async function fetchBurnOnlyNormie(id: number): Promise<UpgradedNormie | null> {
+  try {
+    const [infoRes, traitsRes] = await Promise.all([
+      fetchWithRetry(`${BASE_API}/normie/${id}/canvas/info`),
+      fetchWithRetry(`${BASE_API}/normie/${id}/traits`),
+    ]);
+    if (!infoRes.ok) return null;
+    const info = await infoRes.json();
+    if ((info.actionPoints ?? 0) === 0) return null; // no AP = burns haven't been revealed yet
+    const traits = traitsRes.ok ? await traitsRes.json() : { attributes: [] };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const type = traits.attributes?.find((a: any) => a.trait_type === "Type")?.value ?? "Human";
+    return { id, level: info.level ?? 1, ap: info.actionPoints, added: 0, removed: 0, editCount: 0, type: String(type) };
+  } catch { return null; }
+}
+
 // ─── Merge helpers ────────────────────────────────────────────────────────────
 
 function mergeEditLogs(editsByToken: Map<number, RawEditEvent[]>, logs: RawLog[]): Set<number> {
@@ -251,7 +269,7 @@ export async function runFullScan(): Promise<{ eventsBlob: EventsBlob; normiesBl
   mergeEditLogs(editsByToken, editLogs);
   mergeBurnLogs(burnsByToken, burnLogs);
 
-  // Build normie details
+  // Build normie details — pixel-edited normies first
   const allIds  = [...editsByToken.keys()];
   const normies: UpgradedNormie[] = [];
   const BATCH   = 8;
@@ -261,6 +279,17 @@ export async function runFullScan(): Promise<{ eventsBlob: EventsBlob; normiesBl
     for (const r of results) { if (r) normies.push(r); }
     if (i + BATCH < allIds.length) await new Promise(r => setTimeout(r, 1500));
   }
+
+  // Also include normies that only received burns (have AP but haven't edited pixels yet)
+  const editedIds = new Set(normies.map(n => n.id));
+  const burnOnlyIds = [...burnsByToken.keys()].filter(id => !editedIds.has(id));
+  for (let i = 0; i < burnOnlyIds.length; i += BATCH) {
+    const batch   = burnOnlyIds.slice(i, i + BATCH);
+    const results = await Promise.all(batch.map(id => fetchBurnOnlyNormie(id)));
+    for (const r of results) { if (r) normies.push(r); }
+    if (i + BATCH < burnOnlyIds.length) await new Promise(r => setTimeout(r, 1500));
+  }
+
   normies.sort((a, b) => b.level - a.level || b.ap - a.ap);
 
   const now = Date.now();
@@ -333,7 +362,11 @@ export async function runIncrementalScan(existing: EventsBlob): Promise<{ events
   for (let i = 0; i < toFetch.length; i += BATCH) {
     const batch   = toFetch.slice(i, i + BATCH);
     const results = await Promise.all(
-      batch.map(id => fetchNormieDetails(id, editsByToken.get(id)?.length ?? 0))
+      batch.map(id =>
+        editsByToken.has(id)
+          ? fetchNormieDetails(id, editsByToken.get(id)!.length)
+          : fetchBurnOnlyNormie(id)
+      )
     );
     for (const r of results) { if (r) normies.push(r); }
     if (i + BATCH < toFetch.length) await new Promise(r => setTimeout(r, 1500));
@@ -468,7 +501,7 @@ export async function getLeaderboards() {
     mostEdited:   mostEdited.slice(0, 50).map(n => ({ tokenId: n.id, value: n.editCount, label: "edits",  type: n.type })),
     highestLevel: highestLevel.slice(0, 50).map(n => ({ tokenId: n.id, value: n.level,   label: "level",  type: n.type })),
     mostAp:       mostAp.slice(0, 50).map(n => ({ tokenId: n.id, value: n.ap,        label: "AP",    type: n.type })),
-    totalCustomized: cache.editsByToken.size, // all unique normies with any PixelsTransformed event
+    totalCustomized: new Set([...cache.editsByToken.keys(), ...cache.burnsByToken.keys()]).size, // all normies with pixel edits OR burns
     scannedAt,
     latestBlock,
   };

@@ -169,6 +169,25 @@ async function fetchNormieDetails(id, editCount) {
   }
 }
 
+// Fetch canvas info + traits for a normie that received burns but hasn't edited pixels.
+async function fetchBurnOnlyNormie(id) {
+  try {
+    const [infoRes, traitsRes] = await Promise.all([
+      fetchWithRetry(`${BASE_API}/normie/${id}/canvas/info`),
+      fetchWithRetry(`${BASE_API}/normie/${id}/traits`),
+    ]);
+    if (!infoRes.ok) return null;
+    const info = await infoRes.json();
+    if ((info.actionPoints ?? 0) === 0) return null; // no AP = burns haven't been revealed
+    const traits = traitsRes.ok ? await traitsRes.json() : { attributes: [] };
+    const type = traits.attributes?.find(a => a.trait_type === 'Type')?.value ?? 'Human';
+    return { id, level: info.level ?? 1, ap: info.actionPoints, added: 0, removed: 0, editCount: 0, type: String(type) };
+  } catch (err) {
+    console.warn(`  fetchBurnOnlyNormie(${id}) failed:`, err.message);
+    return null;
+  }
+}
+
 // ─── Merge helpers ────────────────────────────────────────────────────────────
 
 function mergeEditLogs(editsByToken, logs) {
@@ -313,10 +332,30 @@ async function main() {
   if (isIncremental && toRefresh.size > 0) {
     const existingNormies = (await blobGet(NORMIES_KEY))?.normies ?? [];
     normies = existingNormies.filter(n => !toRefresh.has(n.id));
-    const refreshed = await fetchNormiesBatch([...toRefresh], editsByToken);
-    normies.push(...refreshed);
+    // Use fetchNormieDetails for pixel-edited, fetchBurnOnlyNormie for burn-only receivers
+    const BATCH = 8;
+    const toFetchArr = [...toRefresh];
+    for (let i = 0; i < toFetchArr.length; i += BATCH) {
+      const batch = toFetchArr.slice(i, i + BATCH);
+      const results = await Promise.all(
+        batch.map(id => editsByToken.has(id) ? fetchNormieDetails(id, editsByToken.get(id)?.length ?? 0) : fetchBurnOnlyNormie(id))
+      );
+      for (const r of results) { if (r) normies.push(r); }
+      if (i + BATCH < toFetchArr.length) await sleep(1500);
+    }
   } else if (!isIncremental) {
+    // Full scan: process all edited normies first, then burn-only receivers
     normies = await fetchNormiesBatch([...editsByToken.keys()], editsByToken);
+    const editedIds = new Set(normies.map(n => n.id));
+    const burnOnlyIds = [...burnsByToken.keys()].filter(id => !editedIds.has(id));
+    console.log(`      Also fetching ${burnOnlyIds.length} burn-only (unedited) normies…`);
+    const BATCH = 8;
+    for (let i = 0; i < burnOnlyIds.length; i += BATCH) {
+      const batch = burnOnlyIds.slice(i, i + BATCH);
+      const results = await Promise.all(batch.map(id => fetchBurnOnlyNormie(id)));
+      for (const r of results) { if (r) normies.push(r); }
+      if (i + BATCH < burnOnlyIds.length) await sleep(1500);
+    }
   } else {
     // Incremental but nothing changed — keep existing normies
     normies = (await blobGet(NORMIES_KEY))?.normies ?? [];
