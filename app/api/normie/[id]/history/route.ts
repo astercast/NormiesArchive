@@ -11,6 +11,7 @@ interface Props { params: Promise<{ id: string }> }
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function mapVersionToEdit(v: any) {
   return {
+    version:       Number(v.version),     // 0-indexed chronological version number from Ponder
     blockNumber:   Number(v.blockNumber),
     timestamp:     Number(v.timestamp),
     txHash:        v.txHash        as string,
@@ -48,17 +49,22 @@ export async function GET(_req: Request, { params }: Props) {
 
     if (versionsRes.status === "fulfilled" && versionsRes.value.ok) {
       const raw: unknown[] = await versionsRes.value.json();
-      const rawBurns: unknown[] = (burnsRes.status === "fulfilled" && burnsRes.value.ok)
-        ? await burnsRes.value.json()
-        : [];
 
-      // API returns newest-first; reverse to chronological order (required for frame building)
-      const edits = [...raw].reverse().map(mapVersionToEdit);
-      const burns = rawBurns.map(b => mapBurnToBurnEvent(b, tokenId));
+      // Only trust the Ponder response if it has data. An empty array means the
+      // indexer hasn't caught up yet — fall through to the blob fallback instead.
+      if (raw.length > 0) {
+        const rawBurns: unknown[] = (burnsRes.status === "fulfilled" && burnsRes.value.ok)
+          ? await burnsRes.value.json()
+          : [];
 
-      const res = NextResponse.json({ tokenId, edits, burns });
-      res.headers.set("Cache-Control", "public, s-maxage=120, stale-while-revalidate=600");
-      return res;
+        // API returns newest-first; reverse to chronological order (required for frame building)
+        const edits = [...raw].reverse().map(mapVersionToEdit);
+        const burns = rawBurns.map(b => mapBurnToBurnEvent(b, tokenId));
+
+        const res = NextResponse.json({ tokenId, edits, burns });
+        res.headers.set("Cache-Control", "public, s-maxage=120, stale-while-revalidate=600");
+        return res;
+      }
     }
   } catch (err) {
     console.warn(`[history/${tokenId}] api.normies.art failed, falling back to blob:`, err);

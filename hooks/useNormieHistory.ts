@@ -24,6 +24,7 @@ function validatePixels(str: string): string {
 }
 
 export interface EditEvent {
+  version?:      number; // Ponder version index (0-indexed chronological); absent in blob fallback
   blockNumber:   number;
   timestamp:     number;
   txHash:        string;
@@ -112,21 +113,25 @@ export function useNormieHistory(tokenId: number) {
     retryDelay: attempt => Math.min(1500 * 2 ** attempt, 10_000),
   });
 
-  // Fetch actual composited pixel state at each version from api.normies.art
-  // version 0 = after first setTransformBitmap call, version 1 = after second, etc.
+  // Fetch actual composited pixel state at each version from api.normies.art.
+  // Uses the version number from the Ponder API (v.version) when available,
+  // falling back to array position for blob-sourced history.
+  const editCount = history.data?.edits.length ?? 0;
   const versionPixels = useQuery({
-    queryKey: ["normie", tokenId, "version-pixels", history.data?.edits.length ?? 0],
+    queryKey: ["normie", tokenId, "version-pixels", editCount],
     queryFn:  async () => {
       const edits = history.data!.edits;
       if (edits.length === 0) return [];
       const results: string[] = new Array(edits.length).fill("");
-      const BATCH = 5; // stay comfortably under 60 req/min
+      const BATCH = 5; // stay comfortably under 60 req/min rate limit
       for (let i = 0; i < edits.length; i += BATCH) {
         const end = Math.min(i + BATCH, edits.length);
         const fetches = await Promise.allSettled(
-          Array.from({ length: end - i }, (_, j) =>
-            fetchText(`${BASE}/history/normie/${tokenId}/version/${i + j}/pixels`).then(validatePixels)
-          )
+          Array.from({ length: end - i }, (_, j) => {
+            // Use actual Ponder version number if present, else positional index
+            const vNum = edits[i + j].version ?? (i + j);
+            return fetchText(`${BASE}/history/normie/${tokenId}/version/${vNum}/pixels`).then(validatePixels);
+          })
         );
         for (let j = 0; j < fetches.length; j++) {
           const r = fetches[j];
@@ -144,8 +149,9 @@ export function useNormieHistory(tokenId: number) {
 
   // True historical frames: [origin, actual pixels after version 0, after version 1, ...]
   // Falls back to the seeded-shuffle simulation per frame only if a version fetch fails.
+  // Key includes editCount so old simulated-frame cache is never served here.
   const frames = useQuery({
-    queryKey: ["normie", tokenId, "frames"],
+    queryKey: ["normie", tokenId, "frames", editCount],
     queryFn:  () => {
       const orig  = originalPixels.data!;
       const edits = history.data!.edits;
@@ -153,7 +159,9 @@ export function useNormieHistory(tokenId: number) {
 
       if (edits.length === 0 || vp.length === 0) return [orig];
 
-      // Simulated frames as per-step fallback when a version pixel fetch failed
+      // Simulated frames as per-step fallback when a version pixel fetch failed.
+      // Requires transformLayer (single fast fetch) — always available by this point
+      // since versionPixels takes much longer (multiple batched fetches).
       const simulated = transformLayer.data
         ? buildTransformFrames(orig, transformLayer.data, edits)
         : null;
@@ -161,7 +169,12 @@ export function useNormieHistory(tokenId: number) {
       const frameList: string[] = [orig];
       for (let i = 0; i < edits.length; i++) {
         const actual = vp[i];
-        frameList.push(actual && actual.length === 1600 ? actual : (simulated?.[i + 1] ?? orig));
+        // Use actual pixel state; fall back to simulation; last resort: keep previous frame
+        frameList.push(
+          (actual && actual.length === 1600)
+            ? actual
+            : (simulated?.[i + 1] ?? frameList[frameList.length - 1])
+        );
       }
       return frameList;
     },
