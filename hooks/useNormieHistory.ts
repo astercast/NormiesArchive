@@ -1,6 +1,7 @@
 "use client";
 
-import { useQuery, useMemo } from "@tanstack/react-query";
+import { useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { diffStrings, coordsToIndices, PIXEL_COUNT, GRID_SIZE, buildTransformFrames } from "@/lib/pixelUtils";
 
 const BASE = "https://api.normies.art";
