@@ -454,6 +454,21 @@ export async function getBurnCounts(tokenIds: number[]): Promise<Map<number, num
   return result;
 }
 
+/**
+ * Returns the most recently recorded lit-pixel count per token.
+ * Edited normies: uses the last edit event's newPixelCount (in-memory, instant).
+ * Unedited normies: returns null — caller should fetch from the Normies API.
+ */
+export async function getLastPixelCounts(tokenIds: number[]): Promise<Map<number, number | null>> {
+  const cache = await getCache();
+  const result = new Map<number, number | null>();
+  for (const id of tokenIds) {
+    const events = cache.editsByToken.get(id);
+    result.set(id, events && events.length > 0 ? events[events.length - 1].newPixelCount : null);
+  }
+  return result;
+}
+
 export async function getTokenHistory(tokenId: number): Promise<{ edits: EditEvent[]; burns: BurnEvent[] }> {
   const cache    = await getCache();
   const rawEdits = cache.editsByToken.get(tokenId) ?? [];

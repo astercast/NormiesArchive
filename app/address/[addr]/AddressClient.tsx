@@ -219,7 +219,7 @@ export default function AddressClient({ addr }: Props) {
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
           <StatCard label="owned"      value={data.totalOwned}      icon={<Trophy   className="w-3.5 h-3.5 text-amber-400/80" />} accent="bg-amber-400/50" />
           <StatCard label="total AP"   value={data.totalAp}         icon={<Zap      className="w-3.5 h-3.5 text-amber-400/80" />} accent="bg-amber-400/70" />
-          <StatCard label="px changed" value={data.totalPixels}     icon={<Grid2x2  className="w-3.5 h-3.5 text-amber-400/80" />} accent="bg-amber-400/60" />
+          <StatCard label="total pixels" value={data.totalPixels}     icon={<Grid2x2  className="w-3.5 h-3.5 text-amber-400/80" />} accent="bg-amber-400/60" />
           <StatCard label="total burns" value={data.totalBurns}     icon={<Flame    className="w-3.5 h-3.5 text-amber-400/80" />} accent="bg-amber-400/60" />
           <StatCard label="customized" value={data.customizedCount} icon={<Palette  className="w-3.5 h-3.5 text-amber-400/80" />} accent="bg-amber-400/50" />
           <StatCard label="the 100"    value={data.the100Count}     icon={<Star     className="w-3.5 h-3.5 text-amber-400/80" />} accent="bg-amber-400/60" />

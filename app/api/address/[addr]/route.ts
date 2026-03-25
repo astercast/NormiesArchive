@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { isAddress, parseAbi } from "viem";
 import { publicClient } from "@/lib/viemClient";
-import { getLeaderboards, getThe100, getBurnCounts } from "@/lib/indexer";
+import { getLeaderboards, getThe100, getBurnCounts, getLastPixelCounts } from "@/lib/indexer";
 
 export const dynamic     = "force-dynamic";
 export const maxDuration = 45;
@@ -126,6 +126,34 @@ async function fetchOwnedTokenIds(address: string): Promise<number[]> {
   return fetchOwnedViaMulticall(address);
 }
 
+const NORMIES_API = "https://api.normies.art";
+
+// Fetch the number of lit pixels for a single token from the Normies API
+async function fetchPixelCount(tokenId: number): Promise<number> {
+  try {
+    const res = await fetch(`${NORMIES_API}/normie/${tokenId}/pixels`, { cache: "no-store" });
+    if (!res.ok) return 0;
+    const text = (await res.text()).trim();
+    let count = 0;
+    for (const c of text) if (c === "1") count++;
+    return count;
+  } catch {
+    return 0;
+  }
+}
+
+// Batch-fetch pixel counts for tokens not covered by the edit-event cache
+async function fetchPixelCounts(tokenIds: number[]): Promise<Map<number, number>> {
+  const BATCH = 20;
+  const result = new Map<number, number>();
+  for (let i = 0; i < tokenIds.length; i += BATCH) {
+    const batch = tokenIds.slice(i, i + BATCH);
+    const counts = await Promise.all(batch.map(id => fetchPixelCount(id).then(c => ({ id, c }))));
+    for (const { id, c } of counts) result.set(id, c);
+  }
+  return result;
+}
+
 // Multicall: ownerOf for all 10k tokens in parallel batches — no API key needed
 const OWNER_OF_ABI = parseAbi(["function ownerOf(uint256) view returns (address)"]);
 
@@ -171,6 +199,7 @@ export interface WalletNormie {
   isThe100:   boolean;
   the100Rank: number | null;
   burnCount:  number;
+  pixelCount: number;
 }
 
 interface Props { params: Promise<{ addr: string }> }
@@ -191,7 +220,15 @@ export async function GET(_req: Request, { params }: Props) {
       getThe100(),
     ]);
 
-    const burnCountMap = await getBurnCounts(tokenIds);
+    const burnCountMap  = await getBurnCounts(tokenIds);
+
+    // Pixel counts: use cached last-edit newPixelCount for edited normies,
+    // fetch from Normies API for unedited ones (they have no edit events in the index)
+    const cachedPixelCounts = await getLastPixelCounts(tokenIds);
+    const uncachedIds = tokenIds.filter(id => cachedPixelCounts.get(id) === null);
+    const fetchedPixelCounts = uncachedIds.length > 0 ? await fetchPixelCounts(uncachedIds) : new Map<number, number>();
+    const pixelCountOf = (id: number) =>
+      cachedPixelCounts.get(id) ?? fetchedPixelCounts.get(id) ?? 0;
 
     const normieMap  = new Map(leaderboardData.all.map(n => [n.tokenId, n]));
     const the100Map  = new Map(the100Data.entries.map(e => [e.tokenId, e.rank]));
@@ -210,6 +247,7 @@ export async function GET(_req: Request, { params }: Props) {
         isThe100:   rank !== null,
         the100Rank: rank,
         burnCount:  burnCountMap.get(id) ?? 0,
+        pixelCount: pixelCountOf(id),
       };
     });
 
@@ -220,7 +258,7 @@ export async function GET(_req: Request, { params }: Props) {
       normies,
       totalOwned:     normies.length,
       totalAp:        normies.reduce((s, n) => s + n.ap, 0),
-      totalPixels:    normies.reduce((s, n) => s + n.added + n.removed, 0),
+      totalPixels:    normies.reduce((s, n) => s + n.pixelCount, 0),
       totalBurns:     normies.reduce((s, n) => s + n.burnCount, 0),
       customizedCount: normies.filter(n => n.editCount > 0 || n.ap > 0).length,
       the100Count:    normies.filter(n => n.isThe100).length,
