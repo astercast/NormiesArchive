@@ -454,15 +454,39 @@ export async function getBurnCounts(tokenIds: number[]): Promise<Map<number, num
   return result;
 }
 
-/** Returns the total number of burns ever performed BY a given wallet address.
- *  Only counts non-expired burns (totalActions > 0 means AP was actually granted). */
+/** Returns the total number of non-expired burns performed BY a given wallet address.
+ *  Queries the chain directly (topic-filtered getLogs) for accuracy — the blob index
+ *  may be incomplete for addresses with a long history. */
 export async function getBurnsDoneByAddress(address: string): Promise<number> {
-  const cache = await getCache();
-  const addrLower = address.toLowerCase();
+  const CHUNK     = 50_000n;
+  const PARALLEL  = 12;
+  const latest    = await publicClient.getBlockNumber();
+
+  const chunks: Array<[bigint, bigint]> = [];
+  for (let f = CANVAS_DEPLOY_BLOCK; f <= latest; f += CHUNK) {
+    chunks.push([f, f + CHUNK - 1n < latest ? f + CHUNK - 1n : latest]);
+  }
+
   let count = 0;
-  for (const events of cache.burnsByToken.values()) {
-    for (const e of events) {
-      if (e.owner.toLowerCase() === addrLower && e.totalActions > 0) count++;
+  for (let i = 0; i < chunks.length; i += PARALLEL) {
+    const results = await Promise.allSettled(
+      chunks.slice(i, i + PARALLEL).map(([from, to]) =>
+        publicClient.getLogs({
+          address: CANVAS_ADDRESS,
+          event:   BURN_EVENT,
+          args:    { owner: address as `0x${string}` },
+          fromBlock: from,
+          toBlock:   to,
+        })
+      )
+    );
+    for (const r of results) {
+      if (r.status === "fulfilled") {
+        for (const log of r.value) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          if (!(log as any).args.expired) count++;
+        }
+      }
     }
   }
   return count;
