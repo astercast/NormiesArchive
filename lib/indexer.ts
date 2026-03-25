@@ -581,17 +581,17 @@ export async function getLeaderboards() {
   const scannedAt   = normiesBlob?.savedAt ?? Date.now();
 
   const mostEdited   = [...normies].sort((a, b) => b.editCount - a.editCount || b.level - a.level);
-  const highestLevel = [...normies].sort((a, b) => b.level - a.level || b.ap - a.ap);
-  const mostAp       = [...normies].sort((a, b) => b.ap - a.ap || b.level - a.level);
+  const highestLevel = [...normies].sort((a, b) => b.level - a.level || b.editCount - a.editCount);
+  const mostPixels   = [...normies].sort((a, b) => b.added - a.added || b.editCount - a.editCount);
 
   return {
     all: normies.map(n => ({
       tokenId: n.id, level: n.level, ap: n.ap,
       added: n.added, removed: n.removed, type: n.type, editCount: n.editCount,
     })),
-    mostEdited:   mostEdited.slice(0, 50).map(n => ({ tokenId: n.id, value: n.editCount, label: "edits",  type: n.type })),
-    highestLevel: highestLevel.slice(0, 50).map(n => ({ tokenId: n.id, value: n.level,   label: "level",  type: n.type })),
-    mostAp:       mostAp.slice(0, 50).map(n => ({ tokenId: n.id, value: n.ap,        label: "AP",    type: n.type })),
+    mostEdited:   mostEdited.slice(0, 50).map(n => ({ tokenId: n.id, value: n.editCount, label: "edits",   type: n.type })),
+    highestLevel: highestLevel.slice(0, 50).map(n => ({ tokenId: n.id, value: n.level,   label: "level",   type: n.type })),
+    mostPixels:   mostPixels.slice(0, 50).map(n => ({ tokenId: n.id, value: n.added,     label: "pixels",  type: n.type })),
     totalCustomized: new Set([...cache.editsByToken.keys(), ...cache.burnsByToken.keys()]).size, // all normies with pixel edits OR burns
     scannedAt,
     latestBlock,
