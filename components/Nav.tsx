@@ -10,6 +10,7 @@ const LINKS = [
   { href: "/leaderboard",  label: "leaderboard" },
   { href: "/the-100",      label: "the 100" },
   { href: "/latest",       label: "latest works" },
+  { href: "/wallet",       label: "wallet" },
   { href: "/how-it-works", label: "how it works" },
 ];
 
@@ -43,16 +44,7 @@ export default function Nav() {
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    const q = query.trim();
-    // Ethereum address (0x + 40 hex chars)
-    if (/^0x[0-9a-fA-F]{40}$/.test(q)) {
-      router.push(`/address/${q}`);
-      setQuery("");
-      setMenuOpen(false);
-      return;
-    }
-    // Normie ID (0–9999)
-    const id = parseInt(q);
+    const id = parseInt(query);
     if (!isNaN(id) && id >= 0 && id <= 9999) {
       router.push(`/normie/${id}`);
       setQuery("");
@@ -100,11 +92,13 @@ export default function Nav() {
               <div className="relative">
                 <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-n-faint" />
                 <input
-                  type="text"
+                  type="number"
+                  min={0}
+                  max={9999}
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder="#id or 0x addr"
-                  className="w-28 sm:w-36 pl-7 pr-2 py-1.5 bg-n-surface border border-n-border rounded text-xs font-mono text-n-text placeholder:text-n-faint focus:outline-none focus:border-n-muted transition-colors"
+                  placeholder="0–9999"
+                  className="w-24 sm:w-28 pl-7 pr-2 py-1.5 bg-n-surface border border-n-border rounded text-xs font-mono text-n-text placeholder:text-n-faint focus:outline-none focus:border-n-muted transition-colors"
                 />
               </div>
               <button
@@ -158,16 +152,18 @@ export default function Nav() {
                   {link.label}
                 </Link>
               ))}
-              {/* Mobile wallet/ID search */}
+              {/* Mobile normie ID search */}
               <div className="px-5 py-3 border-t border-n-border mt-1">
                 <form onSubmit={handleSearch} className="flex items-center gap-2">
                   <div className="relative flex-1">
                     <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-n-faint" />
                     <input
-                      type="text"
+                      type="number"
+                      min={0}
+                      max={9999}
                       value={query}
                       onChange={(e) => setQuery(e.target.value)}
-                      placeholder="#id or 0x wallet address"
+                      placeholder="normie #id (0–9999)"
                       className="w-full pl-7 pr-2 py-2 bg-n-surface border border-n-border rounded text-xs font-mono text-n-text placeholder:text-n-faint focus:outline-none focus:border-n-muted transition-colors"
                     />
                   </div>

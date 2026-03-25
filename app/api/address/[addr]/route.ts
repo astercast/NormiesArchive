@@ -1,16 +1,16 @@
 import { NextResponse } from "next/server";
-import { isAddress, parseAbiItem } from "viem";
-import { publicClient } from "@/lib/viemClient";
+import { isAddress } from "viem";
 import { getLeaderboards, getThe100 } from "@/lib/indexer";
 
 export const dynamic     = "force-dynamic";
 export const maxDuration = 30;
 
-const NORMIES_NFT       = "0x9Eb6E2025B64f340691e424b7fe7022fFDE12438" as `0x${string}`;
+const NORMIES_NFT       = "0x9Eb6E2025B64f340691e424b7fe7022fFDE12438";
 const COLLECTION_SLUG   = "normies";
 const OPENSEA_API_KEY   = process.env.OPENSEA_API_KEY ?? "";
+const ETHERSCAN_API_KEY = process.env.ETHERSCAN_API_KEY ?? "";
 
-// Strategy 1: OpenSea NFT ownership API — most reliable, handles non-Enumerable contracts
+// Strategy 1: OpenSea NFT ownership API
 async function fetchOwnedViaOpenSea(address: string): Promise<number[]> {
   if (!OPENSEA_API_KEY) throw new Error("no opensea key");
 
@@ -39,49 +39,43 @@ async function fetchOwnedViaOpenSea(address: string): Promise<number[]> {
   return ids;
 }
 
-// Strategy 2: Scan on-chain Transfer events (mint + all transfers) then deduplicate current owners.
-// Covers the full history from Normies NFT deployment block.
-async function fetchOwnedViaLogs(address: `0x${string}`): Promise<number[]> {
-  const transferEvent = parseAbiItem(
-    "event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)"
-  );
+// Strategy 2: Etherscan ERC-721 token transfer history — works without pagination limits
+// Tracks all transfers to/from the address and computes final ownership per token.
+async function fetchOwnedViaEtherscan(address: string): Promise<number[]> {
+  const keyParam = ETHERSCAN_API_KEY ? `&apikey=${ETHERSCAN_API_KEY}` : "";
+  const url = `https://api.etherscan.io/api?module=account&action=tokennfttx&contractaddress=${NORMIES_NFT}&address=${address}&page=1&offset=10000&sort=asc${keyParam}`;
 
-  // Received transfers (to = address)
-  const received = await publicClient.getLogs({
-    address: NORMIES_NFT,
-    event:   transferEvent,
-    args:    { to: address },
-    fromBlock: 19_000_000n,
-    toBlock:   "latest",
-  });
+  const res: Response = await fetch(url, { cache: "no-store" });
+  if (!res.ok) throw new Error(`Etherscan HTTP ${res.status}`);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const data: any = await res.json();
 
-  // Sent transfers (from = address)
-  const sent = await publicClient.getLogs({
-    address: NORMIES_NFT,
-    event:   transferEvent,
-    args:    { from: address },
-    fromBlock: 19_000_000n,
-    toBlock:   "latest",
-  });
-
-  const sentIds = new Set(sent.map(l => Number(l.args.tokenId)));
-
-  // Keep only tokens received but not since sent
-  const owned = new Set<number>();
-  for (const log of received) {
-    const id = Number(log.args.tokenId);
-    if (!sentIds.has(id) && id >= 0 && id <= 9999) owned.add(id);
+  if (data.status !== "1") {
+    if (data.message === "No transactions found") return [];
+    throw new Error(`Etherscan: ${data.message ?? data.result}`);
   }
-  return [...owned];
+
+  // Latest transfer for each tokenId determines current owner
+  const ownership = new Map<number, string>();
+  for (const tx of data.result as Array<{ tokenID: string; to: string }>) {
+    const id = parseInt(tx.tokenID);
+    if (!isNaN(id) && id >= 0 && id <= 9999) {
+      ownership.set(id, tx.to.toLowerCase());
+    }
+  }
+
+  const addrLower = address.toLowerCase();
+  return [...ownership.entries()]
+    .filter(([, owner]) => owner === addrLower)
+    .map(([id]) => id);
 }
 
-async function fetchOwnedTokenIds(address: `0x${string}`): Promise<number[]> {
-  // Try OpenSea first (fast, no block scanning needed)
+async function fetchOwnedTokenIds(address: string): Promise<number[]> {
   try {
     return await fetchOwnedViaOpenSea(address);
-  } catch {
-    // Fall back to Transfer event scan
-    return fetchOwnedViaLogs(address);
+  } catch (e) {
+    console.warn("[address] OpenSea failed, trying Etherscan:", e);
+    return fetchOwnedViaEtherscan(address);
   }
 }
 
@@ -107,7 +101,7 @@ export async function GET(_req: Request, { params }: Props) {
     return NextResponse.json({ error: "Invalid Ethereum address" }, { status: 400 });
   }
 
-  const checksumAddr = addr as `0x${string}`;
+  const checksumAddr = addr;
 
   try {
     const [tokenIds, leaderboardData, the100Data] = await Promise.all([
