@@ -164,12 +164,12 @@ async function fetchWithRetry(url: string, attempt = 0): Promise<Response> {
 }
 
 async function fetchNormieDetails(id: number, editCount: number): Promise<UpgradedNormie | null> {
-  const fallback: UpgradedNormie = { id, level: 1, ap: 0, added: 0, removed: 0, editCount, type: "Human" };
+  const fallback: UpgradedNormie = { id, level: 1, ap: 0, added: 0, removed: 0, pixelCount: 0, editCount, type: "Human" };
   try {
-    const [infoRes, diffRes, traitsRes] = await Promise.all([
+    const [infoRes, diffRes, metaRes] = await Promise.all([
       fetchWithRetry(`${BASE_API}/normie/${id}/canvas/info`),
       fetchWithRetry(`${BASE_API}/normie/${id}/canvas/diff`),
-      fetchWithRetry(`${BASE_API}/normie/${id}/traits`),
+      fetchWithRetry(`${BASE_API}/normie/${id}/metadata`),
     ]);
     // 404 = token truly not found; other errors → keep fallback so the normie isn't dropped
     if (infoRes.status === 404) return null;
@@ -179,14 +179,18 @@ async function fetchNormieDetails(id: number, editCount: number): Promise<Upgrad
     }
     const info = await infoRes.json();
     if (!info.customized) return null; // canvas reset to all-zeros: genuinely un-customized
-    const diff   = diffRes.ok   ? await diffRes.json()   : { addedCount: 0, removedCount: 0 };
-    const traits = traitsRes.ok ? await traitsRes.json() : { attributes: [] };
+    const diff = diffRes.ok ? await diffRes.json() : { addedCount: 0, removedCount: 0 };
+    const meta = metaRes.ok ? await metaRes.json() : { attributes: [] };
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const type = traits.attributes?.find((a: any) => a.trait_type === "Type")?.value ?? "Human";
+    const attrs = meta.attributes ?? [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const type       = attrs.find((a: any) => a.trait_type === "Type")?.value ?? "Human";
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const pixelCount = Number(attrs.find((a: any) => a.trait_type === "Pixel Count")?.value ?? 0);
     return {
       id, level: info.level ?? 1, ap: info.actionPoints ?? 0,
       added: diff.addedCount ?? 0, removed: diff.removedCount ?? 0,
-      editCount, type: String(type),
+      pixelCount, editCount, type: String(type),
     };
   } catch (err) {
     console.warn(`[indexer] fetchNormieDetails(${id}) threw — using fallback:`, err);
@@ -198,17 +202,21 @@ async function fetchNormieDetails(id: number, editCount: number): Promise<Upgrad
 // Does NOT require customized=true — just needs AP > 0 to confirm burns happened.
 async function fetchBurnOnlyNormie(id: number): Promise<UpgradedNormie | null> {
   try {
-    const [infoRes, traitsRes] = await Promise.all([
+    const [infoRes, metaRes] = await Promise.all([
       fetchWithRetry(`${BASE_API}/normie/${id}/canvas/info`),
-      fetchWithRetry(`${BASE_API}/normie/${id}/traits`),
+      fetchWithRetry(`${BASE_API}/normie/${id}/metadata`),
     ]);
     if (!infoRes.ok) return null;
     const info = await infoRes.json();
     if ((info.actionPoints ?? 0) === 0) return null; // no AP = burns haven't been revealed yet
-    const traits = traitsRes.ok ? await traitsRes.json() : { attributes: [] };
+    const meta = metaRes.ok ? await metaRes.json() : { attributes: [] };
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const type = traits.attributes?.find((a: any) => a.trait_type === "Type")?.value ?? "Human";
-    return { id, level: info.level ?? 1, ap: info.actionPoints, added: 0, removed: 0, editCount: 0, type: String(type) };
+    const attrs = meta.attributes ?? [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const type       = attrs.find((a: any) => a.trait_type === "Type")?.value ?? "Human";
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const pixelCount = Number(attrs.find((a: any) => a.trait_type === "Pixel Count")?.value ?? 0);
+    return { id, level: info.level ?? 1, ap: info.actionPoints, added: 0, removed: 0, pixelCount, editCount: 0, type: String(type) };
   } catch { return null; }
 }
 
@@ -582,7 +590,7 @@ export async function getLeaderboards() {
 
   const mostEdited   = [...normies].sort((a, b) => b.editCount - a.editCount || b.level - a.level);
   const highestLevel = [...normies].sort((a, b) => b.level - a.level || b.editCount - a.editCount);
-  const mostPixels   = [...normies].sort((a, b) => b.added - a.added || b.editCount - a.editCount);
+  const mostPixels   = [...normies].sort((a, b) => b.pixelCount - a.pixelCount || b.editCount - a.editCount);
 
   return {
     all: normies.map(n => ({
@@ -591,7 +599,7 @@ export async function getLeaderboards() {
     })),
     mostEdited:   mostEdited.filter(n => n.editCount > 0).slice(0, 50).map(n => ({ tokenId: n.id, value: n.editCount, label: "edits",   type: n.type })),
     highestLevel: highestLevel.filter(n => n.level > 1).slice(0, 50).map(n => ({ tokenId: n.id, value: n.level,   label: "level",   type: n.type })),
-    mostPixels:   mostPixels.filter(n => n.added > 0).slice(0, 50).map(n => ({ tokenId: n.id, value: n.added,     label: "pixels",  type: n.type })),
+    mostPixels:   mostPixels.filter(n => n.pixelCount > 0).slice(0, 50).map(n => ({ tokenId: n.id, value: n.pixelCount, label: "pixels",  type: n.type })),
     totalCustomized: new Set([...cache.editsByToken.keys(), ...cache.burnsByToken.keys()]).size, // all normies with pixel edits OR burns
     scannedAt,
     latestBlock,

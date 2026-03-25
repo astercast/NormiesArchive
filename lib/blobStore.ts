@@ -33,13 +33,14 @@ export interface RawBurnEvent {
 }
 
 export interface UpgradedNormie {
-  id:        number;
-  level:     number;
-  ap:        number;
-  added:     number;
-  removed:   number;
-  type:      string;
-  editCount: number;
+  id:         number;
+  level:      number;
+  ap:         number;
+  added:      number;
+  removed:    number;
+  pixelCount: number; // total current pixels from Pixel Count metadata trait
+  type:       string;
+  editCount:  number;
 }
 
 export interface EventsBlob {
