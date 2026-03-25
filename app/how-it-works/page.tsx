@@ -93,26 +93,26 @@ export default function HowItWorksPage() {
       {/* ── PART 3: AP & BURNING ── */}
       <Section label="part 3" title="action points &amp; burning">
         <p className="text-sm font-mono text-n-muted leading-relaxed">
-          you can&apos;t edit pixels for free. you need <strong className="text-n-text">Action Points (AP)</strong> first. each AP lets you flip one pixel. AP is earned by <strong className="text-n-text">burning</strong> other Normies into your target Normie.
+          you can&apos;t edit pixels for free. editing requires <strong className="text-n-text">Action Points (AP)</strong> — on-chain budget earned by <strong className="text-n-text">burning</strong> other Normies into your target Normie. each 1 AP of budget lets you flip one pixel in the next edit transaction.
         </p>
 
         <div className="space-y-3">
           <Step n={1} title="choose a normie to burn">
-            you pick a Normie you own (the &quot;fuel&quot;) and a target Normie that will receive the AP. the fuel Normie is destroyed permanently — it&apos;s gone forever.
+            you pick a Normie you own (the &quot;fuel&quot;) and a target Normie that will receive the AP budget. the fuel Normie is destroyed permanently — it&apos;s gone forever.
           </Step>
           <Step n={2} title="pixel count determines ap earned">
             the burned Normie&apos;s pixel count (how many pixels are lit up) is converted to AP. denser Normies give more AP. there are three tiers — above 490 pixels and above 890 pixels unlock higher conversion percentages.
           </Step>
           <Step n={3} title="commit → reveal">
-            burning uses a two-step commit-reveal pattern on-chain to prevent front-running. you commit first, then reveal after a delay to actually receive the AP.
+            burning uses a two-step commit-reveal pattern on-chain to prevent front-running. you commit first, then reveal after a delay to actually receive the AP budget.
           </Step>
           <Step n={4} title="spend ap to transform pixels">
-            with AP on your Normie, you can call the canvas contract to flip pixels. each flip costs 1 AP. the transform layer is updated on-chain, and the displayed image changes permanently.
+            with AP budget on your Normie, you can call the canvas contract to flip pixels. each flip costs 1 AP. the transform layer is updated on-chain, and the displayed image changes permanently.
           </Step>
         </div>
 
         <Callout>
-          <strong className="text-n-text">important:</strong> &quot;Action Points&quot; in the API (<code>canvas/info</code>) refers to the <em>total pixels ever flipped</em>, not your remaining budget. it&apos;s a lifetime edit score, not a wallet balance. this is also what the &quot;px changed&quot; stat shows on each Normie&apos;s page.
+          <strong className="text-n-text">note on the AP stat shown here:</strong> the &quot;AP&quot; displayed on this archive (and in <code>canvas/info</code> from the API) is the <em>total pixels ever flipped</em> — a lifetime edit score that only goes up, not a remaining budget. your actual remaining budget is tracked separately on-chain. think of the AP shown here as &quot;total edits made&quot;.
         </Callout>
       </Section>
 
@@ -150,11 +150,11 @@ export default function HowItWorksPage() {
         </p>
 
         <div className="space-y-3">
-          <Step n={1} title="blockchain scanning">
-            on first load, a server-side indexer scans all <code className="bg-n-surface px-1 rounded">PixelsTransformed</code> and <code className="bg-n-surface px-1 rounded">BurnRevealed</code> events from the NormiesCanvas contract (deployed at block 19,614,531) to the present. this gives us a complete record of every edit and every burn, which token was involved, and when.
+          <Step n={1} title="ponder indexer + blob cache">
+            all pixel state, edit history, and canvas data is served by the <strong className="text-n-text">Normies Ponder API</strong> (<code className="bg-n-surface px-1 rounded">api.normies.art</code>), which indexes every on-chain event in real time. leaderboard and burn data is fetched from the Ponder API every 10 minutes by a GitHub Actions cron job and cached in Vercel Blob — so the site never hits the blockchain directly on page load.
           </Step>
           <Step n={2} title="per-normie history">
-            when you open a Normie&apos;s detail page, the archive fetches that token&apos;s edit history and resolves block timestamps lazily — only the blocks relevant to that specific Normie. this is fast because each Normie typically has at most a handful of unique edit blocks.
+            when you open a Normie&apos;s detail page, the archive fetches that token&apos;s full edit history from the Ponder API. timestamps for each edit are resolved lazily — only the blocks relevant to that specific Normie. this is fast because each Normie typically has at most a handful of unique edit blocks.
           </Step>
           <Step n={3} title="timeline animation">
             using the original pixels, the transform layer, and the edit history, the archive reconstructs an animated timeline showing each edit step. pixels are distributed proportionally across edits based on their change counts and shuffled deterministically — so the same Normie always produces the same animation.
@@ -163,12 +163,15 @@ export default function HowItWorksPage() {
             the heatmap shows exactly which pixels were added (green) vs removed (red) from the original. this is built from the <code className="bg-n-surface px-1 rounded">canvas/diff</code> endpoint and overlaid on the canvas in real time.
           </Step>
           <Step n={5} title="leaderboard &amp; the 100">
-            the leaderboard ranks all edited Normies by edit count and level. &quot;The 100&quot; page finds the first 100 Normies ever edited — sorted purely by the block number of their first <code className="bg-n-surface px-1 rounded">PixelsTransformed</code> event.
+            the leaderboard ranks all edited Normies by total AP (lifetime edits). &quot;The 100&quot; page shows the first 100 Normies ever edited — sorted by the block number of their first <code className="bg-n-surface px-1 rounded">PixelsTransformed</code> event.
+          </Step>
+          <Step n={6} title="wallet search">
+            you can look up any Ethereum address or ENS name to see all Normies it owns, sorted by AP. ownership is fetched live via multiple strategies (OpenSea, Reservoir, Etherscan) so the data is always current. visit <Link href="/wallet" className="text-n-text underline underline-offset-2 hover:opacity-70 transition-opacity">/wallet</Link> to search.
           </Step>
         </div>
 
         <Callout>
-          <strong className="text-n-text">data freshness:</strong> the indexer caches results for 10 minutes server-side. individual normie history pages are CDN-cached for 5 minutes. all pixel data comes directly from the normies API which reads from on-chain storage — nothing here is mutable or controlled by anyone.
+          <strong className="text-n-text">data freshness:</strong> leaderboard and burn data is refreshed every 10 minutes via a background cron. individual pixel/history data comes directly from <code>api.normies.art</code> and is CDN-cached for 5 minutes. wallet ownership is fetched live on every lookup. nothing here is mutable or controlled by anyone.
         </Callout>
       </Section>
 
@@ -190,6 +193,10 @@ export default function HowItWorksPage() {
         <Link href="/the-100"
           className="inline-flex items-center gap-1.5 px-4 py-2 border border-n-border text-xs font-mono text-n-muted hover:text-n-text hover:border-n-text transition-colors rounded">
           the 100 <ArrowRight className="w-3 h-3" />
+        </Link>
+        <Link href="/wallet"
+          className="inline-flex items-center gap-1.5 px-4 py-2 border border-n-border text-xs font-mono text-n-muted hover:text-n-text hover:border-n-text transition-colors rounded">
+          wallet search <ArrowRight className="w-3 h-3" />
         </Link>
         <a href="https://normies.art" target="_blank" rel="noopener noreferrer"
           className="inline-flex items-center gap-1.5 px-4 py-2 border border-n-border text-xs font-mono text-n-muted hover:text-n-text hover:border-n-text transition-colors rounded">

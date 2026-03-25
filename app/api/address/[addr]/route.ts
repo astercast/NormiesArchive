@@ -39,8 +39,34 @@ async function fetchOwnedViaOpenSea(address: string): Promise<number[]> {
   return ids;
 }
 
-// Strategy 2: Etherscan ERC-721 token transfer history — works without pagination limits
-// Tracks all transfers to/from the address and computes final ownership per token.
+// Strategy 2: Reservoir Protocol — free, no API key required, reliable NFT ownership index
+async function fetchOwnedViaReservoir(address: string): Promise<number[]> {
+  const ids: number[] = [];
+  let continuation: string | null = null;
+
+  do {
+    const base = `https://api.reservoir.tools/users/${address}/tokens/v7?collection=${NORMIES_NFT}&limit=200&sortBy=acquiredAt&sortDirection=desc`;
+    const url: string = continuation ? `${base}&continuation=${encodeURIComponent(continuation)}` : base;
+
+    const res: Response = await fetch(url, {
+      headers: { accept: "application/json" },
+      cache: "no-store",
+    });
+    if (!res.ok) throw new Error(`Reservoir ${res.status}`);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const data: any = await res.json();
+
+    for (const item of data.tokens ?? []) {
+      const id = parseInt(item.token?.tokenId ?? "");
+      if (!isNaN(id) && id >= 0 && id <= 9999) ids.push(id);
+    }
+    continuation = data.continuation ?? null;
+  } while (continuation);
+
+  return ids;
+}
+
+// Strategy 3: Etherscan ERC-721 token transfer history
 async function fetchOwnedViaEtherscan(address: string): Promise<number[]> {
   const keyParam = ETHERSCAN_API_KEY ? `&apikey=${ETHERSCAN_API_KEY}` : "";
   const url = `https://api.etherscan.io/api?module=account&action=tokennfttx&contractaddress=${NORMIES_NFT}&address=${address}&page=1&offset=10000&sort=asc${keyParam}`;
@@ -51,8 +77,15 @@ async function fetchOwnedViaEtherscan(address: string): Promise<number[]> {
   const data: any = await res.json();
 
   if (data.status !== "1") {
-    if (data.message === "No transactions found") return [];
-    throw new Error(`Etherscan: ${data.message ?? data.result}`);
+    // Various "no results" messages Etherscan returns — all mean empty list
+    const result = String(data.result ?? "");
+    const isEmpty =
+      data.message === "No transactions found" ||
+      result.toLowerCase().includes("no transactions") ||
+      result === "[]" ||
+      (Array.isArray(data.result) && data.result.length === 0);
+    if (isEmpty) return [];
+    throw new Error(`Etherscan: ${data.message ?? result}`);
   }
 
   // Latest transfer for each tokenId determines current owner
@@ -71,12 +104,24 @@ async function fetchOwnedViaEtherscan(address: string): Promise<number[]> {
 }
 
 async function fetchOwnedTokenIds(address: string): Promise<number[]> {
-  try {
-    return await fetchOwnedViaOpenSea(address);
-  } catch (e) {
-    console.warn("[address] OpenSea failed, trying Etherscan:", e);
-    return fetchOwnedViaEtherscan(address);
+  // Strategy 1: OpenSea (most accurate, needs API key)
+  if (OPENSEA_API_KEY) {
+    try {
+      return await fetchOwnedViaOpenSea(address);
+    } catch (e) {
+      console.warn("[address] OpenSea failed, trying Reservoir:", e);
+    }
   }
+
+  // Strategy 2: Reservoir (free, no key, reliable)
+  try {
+    return await fetchOwnedViaReservoir(address);
+  } catch (e) {
+    console.warn("[address] Reservoir failed, trying Etherscan:", e);
+  }
+
+  // Strategy 3: Etherscan (free, no key, last resort)
+  return fetchOwnedViaEtherscan(address);
 }
 
 
