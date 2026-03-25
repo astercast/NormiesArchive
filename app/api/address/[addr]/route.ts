@@ -1,56 +1,90 @@
 import { NextResponse } from "next/server";
-import { isAddress } from "viem";
+import { isAddress, parseAbiItem } from "viem";
 import { publicClient } from "@/lib/viemClient";
 import { getLeaderboards, getThe100 } from "@/lib/indexer";
 
 export const dynamic     = "force-dynamic";
 export const maxDuration = 30;
 
-const NORMIES_NFT = "0x9Eb6E2025B64f340691e424b7fe7022fFDE12438" as `0x${string}`;
+const NORMIES_NFT       = "0x9Eb6E2025B64f340691e424b7fe7022fFDE12438" as `0x${string}`;
+const COLLECTION_SLUG   = "normies";
+const OPENSEA_API_KEY   = process.env.OPENSEA_API_KEY ?? "";
 
-const ERC721_ABI = [
-  {
-    name: "balanceOf",
-    type: "function",
-    stateMutability: "view",
-    inputs:  [{ name: "owner", type: "address" }],
-    outputs: [{ name: "",      type: "uint256" }],
-  },
-  {
-    name: "tokenOfOwnerByIndex",
-    type: "function",
-    stateMutability: "view",
-    inputs:  [{ name: "owner", type: "address" }, { name: "index", type: "uint256" }],
-    outputs: [{ name: "",      type: "uint256" }],
-  },
-] as const;
+// Strategy 1: OpenSea NFT ownership API — most reliable, handles non-Enumerable contracts
+async function fetchOwnedViaOpenSea(address: string): Promise<number[]> {
+  if (!OPENSEA_API_KEY) throw new Error("no opensea key");
 
-async function fetchOwnedTokenIds(address: `0x${string}`): Promise<number[]> {
-  const balance = await publicClient.readContract({
+  const ids: number[] = [];
+  let next: string | null = null;
+
+  do {
+    const base = `https://api.opensea.io/api/v2/chain/ethereum/account/${address}/nfts?collection=${COLLECTION_SLUG}&limit=200`;
+    const url: string = next ? `${base}&next=${encodeURIComponent(next)}` : base;
+
+    const res: Response = await fetch(url, {
+      headers: { "x-api-key": OPENSEA_API_KEY, accept: "application/json" },
+      cache: "no-store",
+    });
+    if (!res.ok) throw new Error(`OpenSea ${res.status}`);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const data: any = await res.json();
+
+    for (const nft of data.nfts ?? []) {
+      const id = parseInt(nft.identifier ?? nft.token_id);
+      if (!isNaN(id) && id >= 0 && id <= 9999) ids.push(id);
+    }
+    next = data.next ?? null;
+  } while (next);
+
+  return ids;
+}
+
+// Strategy 2: Scan on-chain Transfer events (mint + all transfers) then deduplicate current owners.
+// Covers the full history from Normies NFT deployment block.
+async function fetchOwnedViaLogs(address: `0x${string}`): Promise<number[]> {
+  const transferEvent = parseAbiItem(
+    "event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)"
+  );
+
+  // Received transfers (to = address)
+  const received = await publicClient.getLogs({
     address: NORMIES_NFT,
-    abi:     ERC721_ABI,
-    functionName: "balanceOf",
-    args:    [address],
+    event:   transferEvent,
+    args:    { to: address },
+    fromBlock: 19_000_000n,
+    toBlock:   "latest",
   });
 
-  const count = Number(balance);
-  if (count === 0) return [];
+  // Sent transfers (from = address)
+  const sent = await publicClient.getLogs({
+    address: NORMIES_NFT,
+    event:   transferEvent,
+    args:    { from: address },
+    fromBlock: 19_000_000n,
+    toBlock:   "latest",
+  });
 
-  // Batch all tokenOfOwnerByIndex calls via viem's built-in multicall
-  const contracts = Array.from({ length: count }, (_, i) => ({
-    address:      NORMIES_NFT,
-    abi:          ERC721_ABI,
-    functionName: "tokenOfOwnerByIndex" as const,
-    args:         [address, BigInt(i)] as [`0x${string}`, bigint],
-  }));
+  const sentIds = new Set(sent.map(l => Number(l.args.tokenId)));
 
-  const results = await publicClient.multicall({ contracts, allowFailure: true });
-
-  return results
-    .filter(r => r.status === "success")
-    .map(r => Number((r as { status: "success"; result: bigint }).result))
-    .filter(id => id >= 0 && id <= 9999);
+  // Keep only tokens received but not since sent
+  const owned = new Set<number>();
+  for (const log of received) {
+    const id = Number(log.args.tokenId);
+    if (!sentIds.has(id) && id >= 0 && id <= 9999) owned.add(id);
+  }
+  return [...owned];
 }
+
+async function fetchOwnedTokenIds(address: `0x${string}`): Promise<number[]> {
+  // Try OpenSea first (fast, no block scanning needed)
+  try {
+    return await fetchOwnedViaOpenSea(address);
+  } catch {
+    // Fall back to Transfer event scan
+    return fetchOwnedViaLogs(address);
+  }
+}
+
 
 export interface WalletNormie {
   tokenId:    number;
