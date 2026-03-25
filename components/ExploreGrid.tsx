@@ -30,10 +30,17 @@ function LevelBadge({ level }: { level: number }) {
 }
 
 function TypeBadge({ type }: { type: string }) {
-  if (type === "Alien") return <span className="absolute top-0.5 left-0.5 text-[7px] leading-none font-mono px-0.5 py-px rounded bg-emerald-500/80 text-white">AL</span>;
-  if (type === "Agent") return <span className="absolute top-0.5 left-0.5 text-[7px] leading-none font-mono px-0.5 py-px rounded bg-violet-500/80 text-white">AG</span>;
-  if (type === "Cat")   return <span className="absolute top-0.5 left-0.5 text-[7px] leading-none font-mono px-0.5 py-px rounded bg-orange-400/80 text-white">CT</span>;
-  return null;
+  if (!type || type === "Human") return null;
+  const styles: Record<string, string> = {
+    Alien: "bg-emerald-500/90 text-white",
+    Agent: "bg-violet-500/90 text-white",
+    Cat:   "bg-orange-400/90 text-white",
+  };
+  return (
+    <span className={`absolute top-1 left-1 text-[7px] leading-none font-mono font-bold px-1 py-0.5 rounded ${styles[type] ?? "bg-n-text/60 text-n-bg"}`}>
+      {type.toUpperCase()}
+    </span>
+  );
 }
 
 function EditCountBadge({ count }: { count: number }) {
