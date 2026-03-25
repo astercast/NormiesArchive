@@ -66,6 +66,7 @@ async function putJson(key: string, data: unknown): Promise<string> {
     access:      "public",
     contentType: "application/json",
     addRandomSuffix: false, // keep stable URL
+    allowOverwrite: true,
   });
   return blob.url;
 }
