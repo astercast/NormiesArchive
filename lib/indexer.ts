@@ -454,14 +454,15 @@ export async function getBurnCounts(tokenIds: number[]): Promise<Map<number, num
   return result;
 }
 
-/** Returns the total number of burns ever performed BY a given wallet address. */
+/** Returns the total number of burns ever performed BY a given wallet address.
+ *  Only counts non-expired burns (totalActions > 0 means AP was actually granted). */
 export async function getBurnsDoneByAddress(address: string): Promise<number> {
   const cache = await getCache();
   const addrLower = address.toLowerCase();
   let count = 0;
   for (const events of cache.burnsByToken.values()) {
     for (const e of events) {
-      if (e.owner.toLowerCase() === addrLower) count++;
+      if (e.owner.toLowerCase() === addrLower && e.totalActions > 0) count++;
     }
   }
   return count;

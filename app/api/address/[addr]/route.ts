@@ -263,7 +263,7 @@ export async function GET(_req: Request, { params }: Props) {
       totalAp:        normies.reduce((s, n) => s + n.ap, 0),
       totalPixels:    normies.reduce((s, n) => s + n.pixelCount, 0),
       totalBurns:     totalBurnsDone,
-      customizedCount: normies.filter(n => n.editCount > 0 || n.ap > 0).length,
+      customizedCount: normies.filter(n => n.editCount > 0).length,
       the100Count:    normies.filter(n => n.isThe100).length,
     });
     res.headers.set("Cache-Control", "public, s-maxage=60, stale-while-revalidate=300");

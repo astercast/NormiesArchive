@@ -18,6 +18,19 @@ export default function WalletSearchClient() {
     if (!q) return;
     setError("");
 
+    // Multi-wallet: comma-separated 0x addresses
+    if (q.includes(",")) {
+      const parts = q.split(",").map(s => s.trim()).filter(Boolean);
+      const invalid = parts.filter(p => !ETH_ADDRESS_RE.test(p));
+      if (invalid.length > 0) {
+        setError(`Invalid: ${invalid.join(", ")} — multi-wallet only supports 0x addresses`);
+        return;
+      }
+      const unique = [...new Set(parts.map(p => p.toLowerCase()))];
+      router.push(`/addresses?q=${unique.join(",")}`);
+      return;
+    }
+
     if (ETH_ADDRESS_RE.test(q)) {
       router.push(`/address/${q}`);
       return;
@@ -42,7 +55,7 @@ export default function WalletSearchClient() {
       return;
     }
 
-    setError("Enter a valid 0x address or ENS name (e.g. vitalik.eth)");
+    setError("Enter a 0x address, ENS name, or comma-separated 0x addresses");
   }
 
   return (
@@ -64,7 +77,7 @@ export default function WalletSearchClient() {
               setQuery(e.target.value);
               setError("");
             }}
-            placeholder="0x… or name.eth"
+            placeholder="0x… or name.eth, or 0x…, 0x… for multiple"
             spellCheck={false}
             autoCapitalize="none"
             autoCorrect="off"
