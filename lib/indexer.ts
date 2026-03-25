@@ -220,6 +220,43 @@ async function fetchBurnOnlyNormie(id: number): Promise<UpgradedNormie | null> {
   } catch { return null; }
 }
 
+const NORMIES_NFT_ADDRESS = "0x9Eb6E2025B64f340691e424b7fe7022fFDE12438" as const;
+const TOTAL_SUPPLY_ABI = [{ name: "totalSupply", type: "function", inputs: [], outputs: [{ name: "", type: "uint256" }], stateMutability: "view" }] as const;
+
+/** Fetch Pixel Count + Type from metadata for the given IDs.
+ *  existing: carry-forward from previous blob (will be overwritten for ids in allIds).
+ */
+async function fetchAllPixelCounts(
+  allIds: number[],
+  existing?: Map<number, [number, string]>,
+): Promise<Map<number, [number, string]>> {
+  const counts = new Map<number, [number, string]>(existing ?? []);
+  const BATCH = 50;
+  for (let i = 0; i < allIds.length; i += BATCH) {
+    const batch = allIds.slice(i, i + BATCH);
+    const results = await Promise.allSettled(batch.map(async id => {
+      const res = await fetchWithRetry(`${BASE_API}/normie/${id}/metadata`);
+      if (!res.ok) return null;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const d = await res.json() as { attributes?: any[] };
+      const attrs = d.attributes ?? [];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const pixelCount = Number(attrs.find((a: any) => a.trait_type === "Pixel Count")?.value ?? 0);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const type = String(attrs.find((a: any) => a.trait_type === "Type")?.value ?? "Human");
+      return [id, pixelCount, type] as [number, number, string];
+    }));
+    for (const r of results) {
+      if (r.status === "fulfilled" && r.value) counts.set(r.value[0], [r.value[1], r.value[2]]);
+    }
+    // Brief pause every 10 batches (500 tokens) to avoid rate-limiting
+    if (i + BATCH < allIds.length && (i / BATCH) % 10 === 9) {
+      await new Promise(r => setTimeout(r, 150));
+    }
+  }
+  return counts;
+}
+
 // ─── Merge helpers ────────────────────────────────────────────────────────────
 
 function mergeEditLogs(editsByToken: Map<number, RawEditEvent[]>, logs: RawLog[]): Set<number> {
@@ -300,6 +337,18 @@ export async function runFullScan(): Promise<{ eventsBlob: EventsBlob; normiesBl
 
   normies.sort((a, b) => b.level - a.level || b.ap - a.ap);
 
+  // Build full pixel leaderboard — scan ALL minted normies (not just event-indexed ones)
+  const totalSupply = await publicClient.readContract({
+    address: NORMIES_NFT_ADDRESS,
+    abi: TOTAL_SUPPLY_ABI,
+    functionName: "totalSupply",
+  }) as bigint;
+  const allNormieIds = Array.from({ length: Number(totalSupply) }, (_, i) => i + 1);
+  console.log(`[indexer] Scanning pixel counts for ${allNormieIds.length} normies…`);
+  const pixelMap = await fetchAllPixelCounts(allNormieIds);
+  const pixelCounts: Array<[number, number, string]> = [...pixelMap.entries()].map(([id, [pc, type]]) => [id, pc, type]);
+  console.log(`[indexer] Pixel counts fetched: ${pixelCounts.length} normies`);
+
   const now = Date.now();
   const latestBlock = Number(latest);
 
@@ -309,7 +358,7 @@ export async function runFullScan(): Promise<{ eventsBlob: EventsBlob; normiesBl
     editsByToken: [...editsByToken.entries()],
     burnsByToken: [...burnsByToken.entries()],
   };
-  const normiesBlob: NormiesBlob = { normies, savedAt: now, latestBlock };
+  const normiesBlob: NormiesBlob = { normies, savedAt: now, latestBlock, pixelCounts };
 
   console.log(`[indexer] Full scan done: ${normies.length} normies, block ${latestBlock} in ${Date.now() - t0}ms`);
   return { eventsBlob, normiesBlob };
@@ -362,7 +411,8 @@ export async function runIncrementalScan(existing: EventsBlob): Promise<{ events
   const toRefresh    = new Set([...touchedEdits, ...touchedBurns]);
 
   // Load existing normies, replace only the ones that changed
-  const existingNormies = (await loadNormiesBlob())?.normies ?? [];
+  const existingNormiesBlob = await loadNormiesBlob();
+  const existingNormies = existingNormiesBlob?.normies ?? [];
   const normies = existingNormies.filter(n => !toRefresh.has(n.id));
 
   const toFetch = [...toRefresh];
@@ -381,6 +431,13 @@ export async function runIncrementalScan(existing: EventsBlob): Promise<{ events
   }
   normies.sort((a, b) => b.level - a.level || b.ap - a.ap);
 
+  // Update pixel counts — only re-fetch changed IDs, carry forward the rest
+  const existingPixelMap = new Map<number, [number, string]>(
+    (existingNormiesBlob?.pixelCounts ?? []).map(([id, pc, type]) => [id, [pc, type] as [number, string]])
+  );
+  const updatedPixelMap = await fetchAllPixelCounts([...toRefresh], existingPixelMap);
+  const pixelCounts: Array<[number, number, string]> = [...updatedPixelMap.entries()].map(([id, [pc, type]]) => [id, pc, type]);
+
   const now         = Date.now();
   const latestBlock = Number(latest);
 
@@ -390,7 +447,7 @@ export async function runIncrementalScan(existing: EventsBlob): Promise<{ events
     editsByToken: [...editsByToken.entries()],
     burnsByToken: [...burnsByToken.entries()],
   };
-  const normiesBlob: NormiesBlob = { normies, savedAt: now, latestBlock };
+  const normiesBlob: NormiesBlob = { normies, savedAt: now, latestBlock, pixelCounts };
 
   console.log(`[indexer] Incremental done: ${toRefresh.size} tokens refreshed, block ${latestBlock}`);
   return { eventsBlob, normiesBlob, changed: true };
@@ -590,7 +647,19 @@ export async function getLeaderboards() {
 
   const mostEdited   = [...normies].sort((a, b) => b.editCount - a.editCount || b.level - a.level);
   const highestLevel = [...normies].sort((a, b) => b.level - a.level || b.editCount - a.editCount);
-  const mostPixels   = [...normies].sort((a, b) => (b.pixelCount ?? b.added) - (a.pixelCount ?? a.added) || b.editCount - a.editCount);
+
+  // mostPixels: use full pixel scan (all minted normies) if available, else fall back to indexed normies only
+  let mostPixelsList: Array<{ tokenId: number; value: number; label: string; type: string }>;
+  if (normiesBlob?.pixelCounts && normiesBlob.pixelCounts.length > 0) {
+    mostPixelsList = [...normiesBlob.pixelCounts]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 50)
+      .map(([tokenId, value, type]) => ({ tokenId, value, label: "pixels", type }));
+  } else {
+    // Fallback: indexed normies only (pre-full-rescan)
+    const sorted = [...normies].sort((a, b) => (b.pixelCount ?? b.added) - (a.pixelCount ?? a.added) || b.editCount - a.editCount);
+    mostPixelsList = sorted.filter(n => (n.pixelCount ?? n.added) > 0).slice(0, 50).map(n => ({ tokenId: n.id, value: n.pixelCount ?? n.added, label: "pixels", type: n.type }));
+  }
 
   return {
     all: normies.map(n => ({
@@ -599,8 +668,8 @@ export async function getLeaderboards() {
     })),
     mostEdited:   mostEdited.filter(n => n.editCount > 0).slice(0, 50).map(n => ({ tokenId: n.id, value: n.editCount, label: "edits",   type: n.type })),
     highestLevel: highestLevel.filter(n => n.level > 1).slice(0, 50).map(n => ({ tokenId: n.id, value: n.level,   label: "level",   type: n.type })),
-    mostPixels:   mostPixels.filter(n => (n.pixelCount ?? n.added) > 0).slice(0, 50).map(n => ({ tokenId: n.id, value: n.pixelCount ?? n.added, label: "pixels",  type: n.type })),
-    totalCustomized: new Set([...cache.editsByToken.keys(), ...cache.burnsByToken.keys()]).size, // all normies with pixel edits OR burns
+    mostPixels:   mostPixelsList,
+    totalCustomized: new Set([...cache.editsByToken.keys(), ...cache.burnsByToken.keys()]).size,
     scannedAt,
     latestBlock,
   };

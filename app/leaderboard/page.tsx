@@ -13,7 +13,7 @@ export default function LeaderboardPage() {
         <div className="text-xs font-mono text-n-muted uppercase tracking-widest">rankings</div>
         <h1 className="text-3xl font-mono font-medium text-n-text">leaderboard</h1>
         <p className="text-xs font-mono text-n-muted">
-          top normies ranked by edits, level, and pixels painted.
+          the top of the normies.
         </p>
       </div>
       <Suspense fallback={

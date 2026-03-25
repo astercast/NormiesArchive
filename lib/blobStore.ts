@@ -52,9 +52,10 @@ export interface EventsBlob {
 }
 
 export interface NormiesBlob {
-  normies:  UpgradedNormie[];
-  savedAt:  number;
-  latestBlock: number;
+  normies:      UpgradedNormie[];
+  savedAt:      number;
+  latestBlock:  number;
+  pixelCounts?: Array<[number, number, string]>; // [tokenId, pixelCount, type] for all normies
 }
 
 // ─── Write ────────────────────────────────────────────────────────────────────
