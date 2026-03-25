@@ -12,22 +12,46 @@ export default function WalletSearchClient() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
+  async function resolveEntry(entry: string): Promise<string | null> {
+    if (ETH_ADDRESS_RE.test(entry)) return entry.toLowerCase();
+    if (ENS_RE.test(entry)) {
+      const res = await fetch(`/api/resolve-ens/${encodeURIComponent(entry)}`);
+      if (!res.ok) return null;
+      const data = await res.json();
+      return (data.address as string).toLowerCase();
+    }
+    return null;
+  }
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     const q = query.trim();
     if (!q) return;
     setError("");
 
-    // Multi-wallet: comma-separated 0x addresses
+    // Multi-wallet: comma-separated addresses or ENS names
     if (q.includes(",")) {
       const parts = q.split(",").map(s => s.trim()).filter(Boolean);
-      const invalid = parts.filter(p => !ETH_ADDRESS_RE.test(p));
+      const invalid = parts.filter(p => !ETH_ADDRESS_RE.test(p) && !ENS_RE.test(p));
       if (invalid.length > 0) {
-        setError(`Invalid: ${invalid.join(", ")} — multi-wallet only supports 0x addresses`);
+        setError(`Invalid: ${invalid.join(", ")}`);
         return;
       }
-      const unique = [...new Set(parts.map(p => p.toLowerCase()))];
-      router.push(`/addresses?q=${unique.join(",")}`);
+      setLoading(true);
+      try {
+        const resolved = await Promise.all(parts.map(resolveEntry));
+        const failed = parts.filter((_, i) => resolved[i] === null);
+        if (failed.length > 0) {
+          setError(`Could not resolve: ${failed.join(", ")}`);
+          return;
+        }
+        const unique = [...new Set(resolved as string[])];
+        router.push(`/addresses?q=${unique.join(",")}`);
+      } catch {
+        setError("Could not resolve one or more names. Try again.");
+      } finally {
+        setLoading(false);
+      }
       return;
     }
 
@@ -65,7 +89,7 @@ export default function WalletSearchClient() {
         Enter an Ethereum address or ENS name to see owned Normies.
       </p>
       <p className="text-zinc-500 text-xs mb-8 text-center">
-        tip: paste multiple <span className="text-zinc-400 font-mono">0x…</span> addresses separated by commas to see a combined view
+        tip: paste multiple addresses or ENS names separated by commas to see a combined view
       </p>
 
       <form
