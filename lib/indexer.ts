@@ -454,6 +454,19 @@ export async function getBurnCounts(tokenIds: number[]): Promise<Map<number, num
   return result;
 }
 
+/** Returns the total number of burns ever performed BY a given wallet address. */
+export async function getBurnsDoneByAddress(address: string): Promise<number> {
+  const cache = await getCache();
+  const addrLower = address.toLowerCase();
+  let count = 0;
+  for (const events of cache.burnsByToken.values()) {
+    for (const e of events) {
+      if (e.owner.toLowerCase() === addrLower) count++;
+    }
+  }
+  return count;
+}
+
 /**
  * Returns the most recently recorded lit-pixel count per token.
  * Edited normies: uses the last edit event's newPixelCount (in-memory, instant).

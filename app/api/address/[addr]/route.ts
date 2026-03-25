@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { isAddress, parseAbi } from "viem";
 import { publicClient } from "@/lib/viemClient";
-import { getLeaderboards, getThe100, getBurnCounts, getLastPixelCounts } from "@/lib/indexer";
+import { getLeaderboards, getThe100, getBurnCounts, getLastPixelCounts, getBurnsDoneByAddress } from "@/lib/indexer";
 
 export const dynamic     = "force-dynamic";
 export const maxDuration = 45;
@@ -220,7 +220,10 @@ export async function GET(_req: Request, { params }: Props) {
       getThe100(),
     ]);
 
-    const burnCountMap  = await getBurnCounts(tokenIds);
+    const [burnCountMap, totalBurnsDone] = await Promise.all([
+      getBurnCounts(tokenIds),
+      getBurnsDoneByAddress(checksumAddr),
+    ]);
 
     // Pixel counts: use cached last-edit newPixelCount for edited normies,
     // fetch from Normies API for unedited ones (they have no edit events in the index)
@@ -259,7 +262,7 @@ export async function GET(_req: Request, { params }: Props) {
       totalOwned:     normies.length,
       totalAp:        normies.reduce((s, n) => s + n.ap, 0),
       totalPixels:    normies.reduce((s, n) => s + n.pixelCount, 0),
-      totalBurns:     normies.reduce((s, n) => s + n.burnCount, 0),
+      totalBurns:     totalBurnsDone,
       customizedCount: normies.filter(n => n.editCount > 0 || n.ap > 0).length,
       the100Count:    normies.filter(n => n.isThe100).length,
     });
