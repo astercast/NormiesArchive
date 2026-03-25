@@ -61,8 +61,11 @@ export default function WalletSearchClient() {
   return (
     <main className="min-h-screen flex flex-col items-center justify-center px-4 pb-24">
       <h1 className="text-3xl font-bold text-white mb-2">Wallet Search</h1>
-      <p className="text-zinc-400 text-sm mb-8">
+      <p className="text-zinc-400 text-sm mb-4">
         Enter an Ethereum address or ENS name to see owned Normies.
+      </p>
+      <p className="text-zinc-500 text-xs mb-8 text-center">
+        tip: paste multiple <span className="text-zinc-400 font-mono">0x…</span> addresses separated by commas to see a combined view
       </p>
 
       <form
