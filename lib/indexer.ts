@@ -465,7 +465,7 @@ export async function getBurnsDoneByAddress(address: string): Promise<number> {
   try {
     let count = 0;
     let offset = 0;
-    const LIMIT = 1000;
+    const LIMIT = 100; // API hard-caps at 100 per page
     while (true) {
       const res = await fetch(
         `${PONDER}/history/burns?owner=${address}&limit=${LIMIT}&offset=${offset}`,
