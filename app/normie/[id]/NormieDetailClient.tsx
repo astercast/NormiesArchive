@@ -4,9 +4,10 @@ import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import Link from "next/link";
+import { useQuery } from "@tanstack/react-query";
 import {
   ArrowLeft, ArrowRight, Download, Share2,
-  Eye, EyeOff, Play, Pause, ExternalLink, Volume2, VolumeX, Loader2, AlertCircle
+  Eye, EyeOff, Play, Pause, ExternalLink, Volume2, VolumeX, Loader2, AlertCircle, Wallet
 } from "lucide-react";
 import { useNormieHistory } from "@/hooks/useNormieHistory";
 import NormieGrid from "@/components/NormieGrid";
@@ -28,6 +29,12 @@ export default function NormieDetailClient({ tokenId }: Props) {
     originalPixels, currentPixels, diff, diffAsIndices, heatmapData,
     info, traits, editHistory, burnHistory, frames, isLoading, hasError, historyLoading, historyError, historyRefetch, lifeStory, normieType,
   } = useNormieHistory(tokenId);
+
+  const { data: ownerData } = useQuery<{ owner?: string }>({
+    queryKey: ["normie-owner", tokenId],
+    queryFn: () => fetch(`/api/normie/${tokenId}/owner`).then(r => r.json()),
+    staleTime: 30_000,
+  });
 
   const [step,           setStep]           = useState(0);
   const [showHeatmap,    setShowHeatmap]    = useState(false);
@@ -260,6 +267,12 @@ export default function NormieDetailClient({ tokenId }: Props) {
             className="p-1.5 border border-n-border text-n-muted rounded hover:text-n-text hover:border-n-text transition-colors">
             {soundOn ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
           </button>
+          {ownerData?.owner && (
+            <Link href={`/address/${ownerData.owner}`}
+              className="px-2.5 py-1.5 border border-n-border text-n-muted text-xs font-mono rounded hover:text-n-text hover:border-n-text transition-colors flex items-center gap-1">
+              <Wallet className="w-3 h-3" /> owner
+            </Link>
+          )}
           <a href={`https://opensea.io/assets/ethereum/0x9Eb6E2025B64f340691e424b7fe7022fFDE12438/${tokenId}`}
             target="_blank" rel="noopener noreferrer"
             className="px-2.5 py-1.5 border border-n-border text-n-muted text-xs font-mono rounded hover:text-n-text hover:border-n-text transition-colors flex items-center gap-1">
