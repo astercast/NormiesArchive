@@ -31,12 +31,15 @@ import { put, head } from "@vercel/blob";
 // ─── Config ───────────────────────────────────────────────────────────────────
 
 const CANVAS_ADDRESS      = "0x64951d92e345C50381267380e2975f66810E869c";
+const NORMIES_NFT_ADDRESS = "0x9Eb6E2025B64f340691e424b7fe7022fFDE12438";
 const CANVAS_DEPLOY_BLOCK = 19_614_531n;
 const CHUNK_SIZE          = 50_000n;
 const PARALLEL_CHUNKS     = 12;
 const BASE_API            = "https://api.normies.art";
 const EVENTS_KEY          = "normies-index/events.json";
 const NORMIES_KEY         = "normies-index/normies.json";
+
+const TOTAL_SUPPLY_ABI = [{ name: "totalSupply", type: "function", inputs: [], outputs: [{ name: "", type: "uint256" }], stateMutability: "view" }];
 
 const RPC_URLS = [
   process.env.ETHEREUM_RPC_URL,
@@ -140,12 +143,12 @@ async function fetchWithRetry(url, attempt = 0) {
 }
 
 async function fetchNormieDetails(id, editCount) {
-  const fallback = { id, level: 1, ap: 0, added: 0, removed: 0, editCount, type: "Human" };
+  const fallback = { id, level: 1, ap: 0, added: 0, removed: 0, pixelCount: 0, editCount, type: "Human" };
   try {
-    const [infoRes, diffRes, traitsRes] = await Promise.all([
+    const [infoRes, diffRes, metaRes] = await Promise.all([
       fetchWithRetry(`${BASE_API}/normie/${id}/canvas/info`),
       fetchWithRetry(`${BASE_API}/normie/${id}/canvas/diff`),
-      fetchWithRetry(`${BASE_API}/normie/${id}/traits`),
+      fetchWithRetry(`${BASE_API}/normie/${id}/metadata`),
     ]);
     // 404 = token truly not found; other errors → keep fallback so the normie isn't dropped
     if (infoRes.status === 404) return null;
@@ -155,13 +158,15 @@ async function fetchNormieDetails(id, editCount) {
     }
     const info = await infoRes.json();
     if (!info.customized) return null; // canvas reset to all-zeros: genuinely un-customized
-    const diff   = diffRes.ok   ? await diffRes.json()   : { addedCount: 0, removedCount: 0 };
-    const traits = traitsRes.ok ? await traitsRes.json() : { attributes: [] };
-    const type   = traits.attributes?.find(a => a.trait_type === "Type")?.value ?? "Human";
+    const diff  = diffRes.ok ? await diffRes.json() : { addedCount: 0, removedCount: 0 };
+    const meta  = metaRes.ok ? await metaRes.json() : { attributes: [] };
+    const attrs = meta.attributes ?? [];
+    const type       = attrs.find(a => a.trait_type === "Type")?.value ?? "Human";
+    const pixelCount = Number(attrs.find(a => a.trait_type === "Pixel Count")?.value ?? 0);
     return {
       id, level: info.level ?? 1, ap: info.actionPoints ?? 0,
       added: diff.addedCount ?? 0, removed: diff.removedCount ?? 0,
-      editCount, type: String(type),
+      pixelCount, editCount, type: String(type),
     };
   } catch (err) {
     console.warn(`  fetchNormieDetails(${id}) threw — using fallback:`, err.message);
@@ -172,20 +177,46 @@ async function fetchNormieDetails(id, editCount) {
 // Fetch canvas info + traits for a normie that received burns but hasn't edited pixels.
 async function fetchBurnOnlyNormie(id) {
   try {
-    const [infoRes, traitsRes] = await Promise.all([
+    const [infoRes, metaRes] = await Promise.all([
       fetchWithRetry(`${BASE_API}/normie/${id}/canvas/info`),
-      fetchWithRetry(`${BASE_API}/normie/${id}/traits`),
+      fetchWithRetry(`${BASE_API}/normie/${id}/metadata`),
     ]);
     if (!infoRes.ok) return null;
     const info = await infoRes.json();
     if ((info.actionPoints ?? 0) === 0) return null; // no AP = burns haven't been revealed
-    const traits = traitsRes.ok ? await traitsRes.json() : { attributes: [] };
-    const type = traits.attributes?.find(a => a.trait_type === 'Type')?.value ?? 'Human';
-    return { id, level: info.level ?? 1, ap: info.actionPoints, added: 0, removed: 0, editCount: 0, type: String(type) };
+    const meta  = metaRes.ok ? await metaRes.json() : { attributes: [] };
+    const attrs = meta.attributes ?? [];
+    const type       = attrs.find(a => a.trait_type === 'Type')?.value ?? 'Human';
+    const pixelCount = Number(attrs.find(a => a.trait_type === 'Pixel Count')?.value ?? 0);
+    return { id, level: info.level ?? 1, ap: info.actionPoints, added: 0, removed: 0, pixelCount, editCount: 0, type: String(type) };
   } catch (err) {
     console.warn(`  fetchBurnOnlyNormie(${id}) failed:`, err.message);
     return null;
   }
+}
+
+// Fetch pixel counts for all given IDs from metadata. existing = Map<id, [pixelCount, type]> to carry forward.
+async function fetchAllPixelCounts(allIds, existing = new Map()) {
+  const counts = new Map(existing);
+  const BATCH = 50;
+  for (let i = 0; i < allIds.length; i += BATCH) {
+    const batch = allIds.slice(i, i + BATCH);
+    const results = await Promise.allSettled(batch.map(async id => {
+      const res = await fetchWithRetry(`${BASE_API}/normie/${id}/metadata`);
+      if (!res.ok) return null;
+      const d = await res.json();
+      const attrs = d.attributes ?? [];
+      const pixelCount = Number(attrs.find(a => a.trait_type === 'Pixel Count')?.value ?? 0);
+      const type = String(attrs.find(a => a.trait_type === 'Type')?.value ?? 'Human');
+      return [id, pixelCount, type];
+    }));
+    for (const r of results) {
+      if (r.status === 'fulfilled' && r.value) counts.set(r.value[0], [r.value[1], r.value[2]]);
+    }
+    if (i + BATCH < allIds.length && (i / BATCH) % 10 === 9) await sleep(150);
+    if (i % 500 === 0 && i > 0) console.log(`  pixel scan: ${i}/${allIds.length}…`);
+  }
+  return counts;
 }
 
 // ─── Merge helpers ────────────────────────────────────────────────────────────
@@ -364,20 +395,45 @@ async function main() {
   normies.sort((a, b) => b.level - a.level || b.ap - a.ap);
   console.log(`      Total customized normies: ${normies.length}`);
 
+  // Build pixel leaderboard covering ALL minted normies
+  console.log("\n[4/6] Building pixel counts for all normies…");
+  let pixelCounts;
+  const existingNormiesBlob = await blobGet(NORMIES_KEY);
+  if (!isIncremental || !existingNormiesBlob?.pixelCounts?.length) {
+    // Full scan: fetch every token ID 1..totalSupply
+    const totalSupply = await client.readContract({
+      address: NORMIES_NFT_ADDRESS,
+      abi: TOTAL_SUPPLY_ABI,
+      functionName: 'totalSupply',
+    });
+    const allNormieIds = Array.from({ length: Number(totalSupply) }, (_, i) => i + 1);
+    console.log(`      Scanning ${allNormieIds.length} normies for pixel counts…`);
+    const pixelMap = await fetchAllPixelCounts(allNormieIds);
+    pixelCounts = [...pixelMap.entries()].map(([id, [pc, type]]) => [id, pc, type]);
+  } else {
+    // Incremental: carry forward existing counts, refresh only changed tokens
+    const existing2 = new Map(
+      existingNormiesBlob.pixelCounts.map(([id, pc, type]) => [id, [pc, type]])
+    );
+    const pixelMap = await fetchAllPixelCounts([...toRefresh], existing2);
+    pixelCounts = [...pixelMap.entries()].map(([id, [pc, type]]) => [id, pc, type]);
+  }
+  console.log(`      Pixel counts built: ${pixelCounts.length} entries`);
+
   // Write to Blob
-  
+
   const now         = Date.now();
   const latestBlock = Number(latest);
 
   // Collect all block numbers from all events and fetch their timestamps
-  console.log("\n[4/5] Fetching block timestamps…");
+  console.log("\n[5/6] Fetching block timestamps…");
   const allBlockNums = [];
   for (const events of editsByToken.values()) for (const e of events) allBlockNums.push(e.blockNumber);
   for (const events of burnsByToken.values()) for (const e of events) allBlockNums.push(e.blockNumber);
   const existingTs = existing?.timestamps ? new Map(existing.timestamps) : new Map();
   const timestamps = await fetchTimestamps(allBlockNums, existingTs);
 
-  console.log("\n[5/5] Writing to Vercel Blob…");
+  console.log("\n[6/6] Writing to Vercel Blob…");
   await Promise.all([
     blobPut(EVENTS_KEY, {
       latestBlock,
@@ -390,6 +446,7 @@ async function main() {
       normies,
       savedAt:  now,
       latestBlock,
+      pixelCounts,
     }),
   ]);
 
