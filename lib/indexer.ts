@@ -589,9 +589,9 @@ export async function getLeaderboards() {
       tokenId: n.id, level: n.level, ap: n.ap,
       added: n.added, removed: n.removed, type: n.type, editCount: n.editCount,
     })),
-    mostEdited:   mostEdited.slice(0, 50).map(n => ({ tokenId: n.id, value: n.editCount, label: "edits",   type: n.type })),
-    highestLevel: highestLevel.slice(0, 50).map(n => ({ tokenId: n.id, value: n.level,   label: "level",   type: n.type })),
-    mostPixels:   mostPixels.slice(0, 50).map(n => ({ tokenId: n.id, value: n.added,     label: "pixels",  type: n.type })),
+    mostEdited:   mostEdited.filter(n => n.editCount > 0).slice(0, 50).map(n => ({ tokenId: n.id, value: n.editCount, label: "edits",   type: n.type })),
+    highestLevel: highestLevel.filter(n => n.level > 1).slice(0, 50).map(n => ({ tokenId: n.id, value: n.level,   label: "level",   type: n.type })),
+    mostPixels:   mostPixels.filter(n => n.added > 0).slice(0, 50).map(n => ({ tokenId: n.id, value: n.added,     label: "pixels",  type: n.type })),
     totalCustomized: new Set([...cache.editsByToken.keys(), ...cache.burnsByToken.keys()]).size, // all normies with pixel edits OR burns
     scannedAt,
     latestBlock,
