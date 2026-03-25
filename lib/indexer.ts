@@ -590,7 +590,7 @@ export async function getLeaderboards() {
 
   const mostEdited   = [...normies].sort((a, b) => b.editCount - a.editCount || b.level - a.level);
   const highestLevel = [...normies].sort((a, b) => b.level - a.level || b.editCount - a.editCount);
-  const mostPixels   = [...normies].sort((a, b) => b.pixelCount - a.pixelCount || b.editCount - a.editCount);
+  const mostPixels   = [...normies].sort((a, b) => (b.pixelCount ?? b.added) - (a.pixelCount ?? a.added) || b.editCount - a.editCount);
 
   return {
     all: normies.map(n => ({
@@ -599,7 +599,7 @@ export async function getLeaderboards() {
     })),
     mostEdited:   mostEdited.filter(n => n.editCount > 0).slice(0, 50).map(n => ({ tokenId: n.id, value: n.editCount, label: "edits",   type: n.type })),
     highestLevel: highestLevel.filter(n => n.level > 1).slice(0, 50).map(n => ({ tokenId: n.id, value: n.level,   label: "level",   type: n.type })),
-    mostPixels:   mostPixels.filter(n => n.pixelCount > 0).slice(0, 50).map(n => ({ tokenId: n.id, value: n.pixelCount, label: "pixels",  type: n.type })),
+    mostPixels:   mostPixels.filter(n => (n.pixelCount ?? n.added) > 0).slice(0, 50).map(n => ({ tokenId: n.id, value: n.pixelCount ?? n.added, label: "pixels",  type: n.type })),
     totalCustomized: new Set([...cache.editsByToken.keys(), ...cache.burnsByToken.keys()]).size, // all normies with pixel edits OR burns
     scannedAt,
     latestBlock,
