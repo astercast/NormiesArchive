@@ -444,6 +444,16 @@ async function getCache(): Promise<MemCache> {
 
 // ─── Public exports (identical signatures to before) ─────────────────────────
 
+/** Returns burn count (number of normies burned INTO each token) for the given token IDs. */
+export async function getBurnCounts(tokenIds: number[]): Promise<Map<number, number>> {
+  const cache = await getCache();
+  const result = new Map<number, number>();
+  for (const id of tokenIds) {
+    result.set(id, cache.burnsByToken.get(id)?.length ?? 0);
+  }
+  return result;
+}
+
 export async function getTokenHistory(tokenId: number): Promise<{ edits: EditEvent[]; burns: BurnEvent[] }> {
   const cache    = await getCache();
   const rawEdits = cache.editsByToken.get(tokenId) ?? [];

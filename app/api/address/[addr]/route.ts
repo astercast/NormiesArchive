@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { isAddress, parseAbi } from "viem";
 import { publicClient } from "@/lib/viemClient";
-import { getLeaderboards, getThe100 } from "@/lib/indexer";
+import { getLeaderboards, getThe100, getBurnCounts } from "@/lib/indexer";
 
 export const dynamic     = "force-dynamic";
 export const maxDuration = 45;
@@ -170,6 +170,7 @@ export interface WalletNormie {
   removed:    number;
   isThe100:   boolean;
   the100Rank: number | null;
+  burnCount:  number;
 }
 
 interface Props { params: Promise<{ addr: string }> }
@@ -190,6 +191,8 @@ export async function GET(_req: Request, { params }: Props) {
       getThe100(),
     ]);
 
+    const burnCountMap = await getBurnCounts(tokenIds);
+
     const normieMap  = new Map(leaderboardData.all.map(n => [n.tokenId, n]));
     const the100Map  = new Map(the100Data.entries.map(e => [e.tokenId, e.rank]));
 
@@ -206,6 +209,7 @@ export async function GET(_req: Request, { params }: Props) {
         removed:    n?.removed   ?? 0,
         isThe100:   rank !== null,
         the100Rank: rank,
+        burnCount:  burnCountMap.get(id) ?? 0,
       };
     });
 
@@ -216,6 +220,8 @@ export async function GET(_req: Request, { params }: Props) {
       normies,
       totalOwned:     normies.length,
       totalAp:        normies.reduce((s, n) => s + n.ap, 0),
+      totalPixels:    normies.reduce((s, n) => s + n.added + n.removed, 0),
+      totalBurns:     normies.reduce((s, n) => s + n.burnCount, 0),
       customizedCount: normies.filter(n => n.editCount > 0 || n.ap > 0).length,
       the100Count:    normies.filter(n => n.isThe100).length,
     });
