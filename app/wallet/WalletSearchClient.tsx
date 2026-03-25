@@ -64,7 +64,7 @@ export default function WalletSearchClient() {
               setQuery(e.target.value);
               setError("");
             }}
-            placeholder="0x… or vitalik.eth"
+            placeholder="0x… or name.eth"
             spellCheck={false}
             autoCapitalize="none"
             autoCorrect="off"
