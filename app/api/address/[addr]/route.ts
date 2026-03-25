@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
-import { isAddress } from "viem";
+import { isAddress, parseAbi } from "viem";
+import { publicClient } from "@/lib/viemClient";
 import { getLeaderboards, getThe100 } from "@/lib/indexer";
 
 export const dynamic     = "force-dynamic";
-export const maxDuration = 30;
+export const maxDuration = 45;
 
-const NORMIES_NFT       = "0x9Eb6E2025B64f340691e424b7fe7022fFDE12438";
+const NORMIES_NFT       = "0x9Eb6E2025B64f340691e424b7fe7022fFDE12438" as const;
 const COLLECTION_SLUG   = "normies";
 const OPENSEA_API_KEY   = process.env.OPENSEA_API_KEY ?? "";
 const ETHERSCAN_API_KEY = process.env.ETHERSCAN_API_KEY ?? "";
@@ -113,15 +114,49 @@ async function fetchOwnedTokenIds(address: string): Promise<number[]> {
     }
   }
 
-  // Strategy 2: Reservoir (free, no key, reliable)
+  // Strategy 2: Reservoir (free, no key, fast)
   try {
     return await fetchOwnedViaReservoir(address);
   } catch (e) {
-    console.warn("[address] Reservoir failed, trying Etherscan:", e);
+    console.warn("[address] Reservoir failed, trying multicall:", e);
   }
 
-  // Strategy 3: Etherscan (free, no key, last resort)
-  return fetchOwnedViaEtherscan(address);
+  // Strategy 3: viem multicall ownerOf — zero external API deps, always works
+  console.log("[address] Using multicall fallback for", address);
+  return fetchOwnedViaMulticall(address);
+}
+
+// Multicall: ownerOf for all 10k tokens in parallel batches — no API key needed
+const OWNER_OF_ABI = parseAbi(["function ownerOf(uint256) view returns (address)"]);
+
+async function fetchOwnedViaMulticall(address: string): Promise<number[]> {
+  const addrLower = address.toLowerCase();
+  const BATCH = 1000;
+  const TOTAL = 10000;
+
+  const batchCount = Math.ceil(TOTAL / BATCH);
+  const batchResults = await Promise.all(
+    Array.from({ length: batchCount }, (_, b) => {
+      const start = b * BATCH;
+      const end   = Math.min(start + BATCH, TOTAL);
+      const contracts = Array.from({ length: end - start }, (_, i) => ({
+        address:      NORMIES_NFT,
+        abi:          OWNER_OF_ABI,
+        functionName: "ownerOf" as const,
+        args:         [BigInt(start + i)] as const,
+      }));
+      return publicClient
+        .multicall({ contracts, allowFailure: true })
+        .then(results =>
+          results
+            .map((r, i) => ({ r, id: start + i }))
+            .filter(({ r }) => r.status === "success" && (r.result as string).toLowerCase() === addrLower)
+            .map(({ id }) => id)
+        );
+    })
+  );
+
+  return batchResults.flat();
 }
 
 

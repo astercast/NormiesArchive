@@ -108,7 +108,7 @@ export default function AddressClient({ addr }: Props) {
   const validAddr = isAddress(addr);
   const short     = validAddr ? `${addr.slice(0, 6)}…${addr.slice(-4)}` : addr;
 
-  const { data, isLoading, isError } = useQuery<AddressData>({
+  const { data, isLoading, isError, error } = useQuery<AddressData>({
     queryKey: ["address", addr.toLowerCase()],
     queryFn:  async () => {
       const res = await fetch(`/api/address/${addr}`);
@@ -188,9 +188,14 @@ export default function AddressClient({ addr }: Props) {
 
       {/* Error */}
       {isError && !isLoading && (
-        <div className="flex items-center gap-3 text-n-muted font-mono text-sm border border-n-border rounded p-6">
-          <AlertCircle className="w-5 h-5 flex-shrink-0" />
-          <span>Couldn&apos;t load normies for this wallet. The address may own none, or the RPC is temporarily unavailable.</span>
+        <div className="flex items-start gap-3 text-n-muted font-mono text-sm border border-n-border rounded p-6">
+          <AlertCircle className="w-5 h-5 flex-shrink-0 mt-px" />
+          <div className="space-y-1">
+            <div>Couldn&apos;t load normies for this wallet.</div>
+            {error instanceof Error && error.message !== "fetch failed" && (
+              <div className="text-xs text-n-faint">{error.message}</div>
+            )}
+          </div>
         </div>
       )}
 
