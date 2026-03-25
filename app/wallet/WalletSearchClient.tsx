@@ -104,7 +104,7 @@ export default function WalletSearchClient() {
               setQuery(e.target.value);
               setError("");
             }}
-            placeholder="0x… or name.eth, or 0x…, 0x… for multiple"
+            placeholder="0x… or name.eth"
             spellCheck={false}
             autoCapitalize="none"
             autoCorrect="off"
