@@ -455,12 +455,40 @@ export async function getBurnCounts(tokenIds: number[]): Promise<Map<number, num
 }
 
 /** Returns the total number of non-expired burns performed BY a given wallet address.
- *  Queries the chain directly (topic-filtered getLogs) for accuracy — the blob index
- *  may be incomplete for addresses with a long history. */
+ *  Primary: Ponder API (/history/burns/owner/{address}) — same indexer the rest of
+ *  the site uses, complete and fast.
+ *  Fallback: topic-filtered getLogs scan (slower, public RPCs may drop chunks). */
 export async function getBurnsDoneByAddress(address: string): Promise<number> {
-  const CHUNK     = 50_000n;
-  const PARALLEL  = 12;
-  const latest    = await publicClient.getBlockNumber();
+  const PONDER = "https://api.normies.art";
+
+  // Primary: Ponder API — paginate until exhausted
+  try {
+    let count = 0;
+    let offset = 0;
+    const LIMIT = 1000;
+    while (true) {
+      const res = await fetch(
+        `${PONDER}/history/burns/owner/${address}?limit=${LIMIT}&offset=${offset}`,
+        { cache: "no-store" }
+      );
+      if (!res.ok) throw new Error(`Ponder ${res.status}`);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const rows: any[] = await res.json();
+      for (const r of rows) {
+        if (!r.expired) count++;
+      }
+      if (rows.length < LIMIT) break;
+      offset += LIMIT;
+    }
+    return count;
+  } catch (err) {
+    console.warn("[getBurnsDoneByAddress] Ponder API failed, falling back to getLogs:", err);
+  }
+
+  // Fallback: topic-filtered getLogs across the full block range
+  const CHUNK    = 50_000n;
+  const PARALLEL = 12;
+  const latest   = await publicClient.getBlockNumber();
 
   const chunks: Array<[bigint, bigint]> = [];
   for (let f = CANVAS_DEPLOY_BLOCK; f <= latest; f += CHUNK) {
@@ -472,9 +500,9 @@ export async function getBurnsDoneByAddress(address: string): Promise<number> {
     const results = await Promise.allSettled(
       chunks.slice(i, i + PARALLEL).map(([from, to]) =>
         publicClient.getLogs({
-          address: CANVAS_ADDRESS,
-          event:   BURN_EVENT,
-          args:    { owner: address as `0x${string}` },
+          address:   CANVAS_ADDRESS,
+          event:     BURN_EVENT,
+          args:      { owner: address as `0x${string}` },
           fromBlock: from,
           toBlock:   to,
         })
