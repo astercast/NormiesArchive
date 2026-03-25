@@ -455,27 +455,27 @@ export async function getBurnCounts(tokenIds: number[]): Promise<Map<number, num
 }
 
 /** Returns the total number of non-expired burns performed BY a given wallet address.
- *  Primary: Ponder API (/history/burns/owner/{address}) — same indexer the rest of
- *  the site uses, complete and fast.
+ *  Primary: Ponder API (/history/burns?owner=...) — same indexer the rest of the site
+ *  uses. Each row has tokenCount (normies burned in that commit) and expired flag.
  *  Fallback: topic-filtered getLogs scan (slower, public RPCs may drop chunks). */
 export async function getBurnsDoneByAddress(address: string): Promise<number> {
   const PONDER = "https://api.normies.art";
 
-  // Primary: Ponder API — paginate until exhausted
+  // Primary: Ponder API
   try {
     let count = 0;
     let offset = 0;
     const LIMIT = 1000;
     while (true) {
       const res = await fetch(
-        `${PONDER}/history/burns/owner/${address}?limit=${LIMIT}&offset=${offset}`,
+        `${PONDER}/history/burns?owner=${address}&limit=${LIMIT}&offset=${offset}`,
         { cache: "no-store" }
       );
       if (!res.ok) throw new Error(`Ponder ${res.status}`);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const rows: any[] = await res.json();
       for (const r of rows) {
-        if (!r.expired) count++;
+        if (!r.expired) count += Number(r.tokenCount ?? 1);
       }
       if (rows.length < LIMIT) break;
       offset += LIMIT;
