@@ -87,7 +87,7 @@ export default function LeaderboardClient() {
         <div className="flex items-center gap-3">
           {data && (
             <span className="text-xs font-mono text-n-faint">
-              {data.totalCustomized} customized · block {data.latestBlock?.toLocaleString()}
+              block {data.latestBlock?.toLocaleString()}
             </span>
           )}
           <button
