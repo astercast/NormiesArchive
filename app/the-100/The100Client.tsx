@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import { Loader2, RefreshCw, ExternalLink, List, Grid, Download } from "lucide-react";
@@ -71,9 +71,23 @@ export default function The100Client() {
   const [view, setView]             = useState<"list" | "grid">("list");
   const [listings, setListings]     = useState<ListingMap>({});
   const [exporting, setExporting]   = useState(false);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
-  async function exportGrid() {
+  // Close dropdown on outside click
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setDropdownOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  async function exportGrid(original = false) {
     if (!data?.entries?.length || exporting) return;
+    setDropdownOpen(false);
     setExporting(true);
     try {
       const CELL = 200;
@@ -90,32 +104,34 @@ export default function The100Client() {
           new Promise<void>((resolve) => {
             const col = i % COLS;
             const row = Math.floor(i / COLS);
-            fetch(`/api/proxy-image?id=${entry.tokenId}`)
+            const url = `/api/proxy-image?id=${entry.tokenId}${original ? "&original" : ""}`;
+            fetch(url)
               .then(r => r.blob())
               .then(blob => {
-                const url = URL.createObjectURL(blob);
+                const objUrl = URL.createObjectURL(blob);
                 const img = new Image(CELL, CELL);
                 img.onload = () => {
                   ctx.drawImage(img, col * CELL, row * CELL, CELL, CELL);
-                  URL.revokeObjectURL(url);
+                  URL.revokeObjectURL(objUrl);
                   resolve();
                 };
-                img.onerror = () => { URL.revokeObjectURL(url); resolve(); };
-                img.src = url;
+                img.onerror = () => { URL.revokeObjectURL(objUrl); resolve(); };
+                img.src = objUrl;
               })
               .catch(() => resolve());
           })
         )
       );
 
+      const filename = original ? "normies-the-100-originals.png" : "normies-the-100.png";
       canvas.toBlob(blob => {
         if (!blob) return;
-        const url  = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.download = "normies-the-100.png";
-        link.href = url;
+        const objUrl = URL.createObjectURL(blob);
+        const link   = document.createElement("a");
+        link.download = filename;
+        link.href = objUrl;
         link.click();
-        URL.revokeObjectURL(url);
+        URL.revokeObjectURL(objUrl);
       }, "image/png");
     } catch (err) {
       console.error("[the-100] export failed", err);
@@ -190,17 +206,34 @@ export default function The100Client() {
             </span>
           )}
           {data && data.entries.length > 0 && (
-            <button
-              onClick={exportGrid}
-              disabled={exporting || loading}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded border border-n-border text-xs font-mono text-n-muted hover:text-n-text hover:border-n-text transition-colors disabled:opacity-40"
-              title="Export clean 10×10 PNG"
-            >
-              {exporting
-                ? <Loader2 className="w-3 h-3 animate-spin" />
-                : <Download className="w-3 h-3" />}
-              {exporting ? "exporting…" : "export THE100GRID png"}
-            </button>
+            <div className="relative" ref={dropdownRef}>
+              <button
+                onClick={() => setDropdownOpen(o => !o)}
+                disabled={exporting || loading}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded border border-n-border text-xs font-mono text-n-muted hover:text-n-text hover:border-n-text transition-colors disabled:opacity-40"
+              >
+                {exporting
+                  ? <Loader2 className="w-3 h-3 animate-spin" />
+                  : <Download className="w-3 h-3" />}
+                {exporting ? "exporting\u2026" : "export THE100GRID png"}
+              </button>
+              {dropdownOpen && (
+                <div className="absolute right-0 mt-1 w-52 border border-n-border rounded bg-n-bg shadow-lg z-20">
+                  <button
+                    onClick={() => exportGrid(false)}
+                    className="w-full text-left px-3 py-2 text-xs font-mono text-n-muted hover:text-n-text hover:bg-n-surface transition-colors"
+                  >
+                    new100 — current canvas
+                  </button>
+                  <button
+                    onClick={() => exportGrid(true)}
+                    className="w-full text-left px-3 py-2 text-xs font-mono text-n-muted hover:text-n-text hover:bg-n-surface transition-colors border-t border-n-border"
+                  >
+                    originals — pre-edit
+                  </button>
+                </div>
+              )}
+            </div>
           )}
           <button
             onClick={() => fetchData(true)}
