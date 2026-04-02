@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
-import { Loader2, RefreshCw, ExternalLink, List, Grid } from "lucide-react";
+import { Loader2, RefreshCw, ExternalLink, List, Grid, Download } from "lucide-react";
 
 const BASE = "https://api.normies.art";
 const ETHERSCAN = "https://etherscan.io/tx";
@@ -70,6 +70,59 @@ export default function The100Client() {
   const [refreshing, setRefreshing] = useState(false);
   const [view, setView]             = useState<"list" | "grid">("list");
   const [listings, setListings]     = useState<ListingMap>({});
+  const [exporting, setExporting]   = useState(false);
+
+  async function exportGrid() {
+    if (!data?.entries?.length || exporting) return;
+    setExporting(true);
+    try {
+      const CELL = 200;
+      const COLS = 10;
+      const entries = data.entries.slice(0, 100);
+      const canvas  = document.createElement("canvas");
+      canvas.width  = CELL * COLS;
+      canvas.height = CELL * Math.ceil(entries.length / COLS);
+      const ctx = canvas.getContext("2d")!;
+
+      // Load all SVGs via our same-origin proxy (avoids canvas CORS taint)
+      await Promise.all(
+        entries.map((entry, i) =>
+          new Promise<void>((resolve) => {
+            const col = i % COLS;
+            const row = Math.floor(i / COLS);
+            fetch(`/api/proxy-image?id=${entry.tokenId}`)
+              .then(r => r.blob())
+              .then(blob => {
+                const url = URL.createObjectURL(blob);
+                const img = new Image(CELL, CELL);
+                img.onload = () => {
+                  ctx.drawImage(img, col * CELL, row * CELL, CELL, CELL);
+                  URL.revokeObjectURL(url);
+                  resolve();
+                };
+                img.onerror = () => { URL.revokeObjectURL(url); resolve(); };
+                img.src = url;
+              })
+              .catch(() => resolve());
+          })
+        )
+      );
+
+      canvas.toBlob(blob => {
+        if (!blob) return;
+        const url  = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.download = "normies-the-100.png";
+        link.href = url;
+        link.click();
+        URL.revokeObjectURL(url);
+      }, "image/png");
+    } catch (err) {
+      console.error("[the-100] export failed", err);
+    } finally {
+      setExporting(false);
+    }
+  }
 
   const fetchData = async (silent = false) => {
     if (silent) setRefreshing(true);
@@ -135,6 +188,19 @@ export default function The100Client() {
             <span className="text-xs font-mono text-n-faint">
               block {data.latestBlock?.toLocaleString()}
             </span>
+          )}
+          {data && data.entries.length > 0 && (
+            <button
+              onClick={exportGrid}
+              disabled={exporting || loading}
+              className="flex items-center gap-1 text-xs font-mono text-n-muted hover:text-n-text transition-colors disabled:opacity-40"
+              title="Export clean 10×10 PNG"
+            >
+              {exporting
+                ? <Loader2 className="w-3 h-3 animate-spin" />
+                : <Download className="w-3 h-3" />}
+              {exporting ? "exporting…" : "export png"}
+            </button>
           )}
           <button
             onClick={() => fetchData(true)}
