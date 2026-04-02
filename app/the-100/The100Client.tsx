@@ -218,7 +218,7 @@ export default function The100Client() {
                 {exporting ? "exporting\u2026" : "export THE100GRID png"}
               </button>
               {dropdownOpen && (
-                <div className="absolute right-0 mt-1 w-52 border border-n-border rounded bg-n-bg shadow-lg z-20">
+                <div className="absolute right-0 mt-1 w-52 border border-n-border rounded shadow-xl z-50" style={{ background: "var(--bg)" }}>
                   <button
                     onClick={() => exportGrid(false)}
                     className="w-full text-left px-3 py-2 text-xs font-mono text-n-muted hover:text-n-text hover:bg-n-surface transition-colors"
