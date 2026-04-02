@@ -193,13 +193,13 @@ export default function The100Client() {
             <button
               onClick={exportGrid}
               disabled={exporting || loading}
-              className="flex items-center gap-1 text-xs font-mono text-n-muted hover:text-n-text transition-colors disabled:opacity-40"
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded border border-n-border text-xs font-mono text-n-muted hover:text-n-text hover:border-n-text transition-colors disabled:opacity-40"
               title="Export clean 10×10 PNG"
             >
               {exporting
                 ? <Loader2 className="w-3 h-3 animate-spin" />
                 : <Download className="w-3 h-3" />}
-              {exporting ? "exporting…" : "export png"}
+              {exporting ? "exporting…" : "export THE100GRID png"}
             </button>
           )}
           <button
