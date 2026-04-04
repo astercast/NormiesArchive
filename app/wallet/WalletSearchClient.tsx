@@ -84,12 +84,12 @@ export default function WalletSearchClient() {
 
   return (
     <main className="min-h-screen flex flex-col items-center justify-center px-4 pb-24">
-      <h1 className="text-3xl font-bold text-white mb-2">Wallet Search</h1>
-      <p className="text-zinc-400 text-sm mb-4">
-        Enter an Ethereum address or ENS name to see owned Normies.
+      <h1 className="text-3xl font-mono font-semibold text-n-text mb-2">wallet search</h1>
+      <p className="text-n-muted font-mono text-sm mb-4">
+        enter an ethereum address or ens name to see owned normies.
       </p>
-      <p className="text-zinc-500 text-xs mb-8 text-center">
-        tip: paste multiple addresses or ENS names separated by commas to see a combined view
+      <p className="text-n-faint font-mono text-xs mb-8 text-center">
+        tip: paste multiple addresses or ens names separated by commas for a combined view
       </p>
 
       <form
@@ -108,19 +108,19 @@ export default function WalletSearchClient() {
             spellCheck={false}
             autoCapitalize="none"
             autoCorrect="off"
-            className="flex-1 rounded-lg bg-zinc-800 border border-zinc-700 text-white placeholder-zinc-500 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-white/20"
+            className="flex-1 rounded border border-n-border bg-n-surface text-n-text placeholder-n-faint px-4 py-2.5 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-n-text/30"
           />
           <button
             type="submit"
             disabled={loading || !query.trim()}
-            className="px-4 py-2.5 rounded-lg bg-white text-black text-sm font-semibold disabled:opacity-40 hover:bg-zinc-200 transition-colors"
+            className="px-4 py-2.5 rounded border border-n-border bg-n-text text-n-bg text-sm font-mono font-semibold disabled:opacity-40 hover:opacity-80 transition-opacity"
           >
-            {loading ? "…" : "Search"}
+            {loading ? "…" : "search"}
           </button>
         </div>
 
         {error && (
-          <p className="text-red-400 text-xs text-center">{error}</p>
+          <p className="text-red-400 font-mono text-xs text-center">{error}</p>
         )}
       </form>
     </main>

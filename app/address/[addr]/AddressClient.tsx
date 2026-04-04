@@ -64,7 +64,7 @@ function NormieCard({ n, large = false }: { n: WalletNormie; large?: boolean }) 
     ? "ring-1 ring-violet-500/40"
     : n.ap > 0
     ? "ring-1 ring-n-border/60"
-    : "ring-1 ring-n-border/30 opacity-60";
+    : "ring-1 ring-n-border/30";
 
   return (
     <Link href={`/normie/${n.tokenId}`} className="block group">
@@ -209,6 +209,15 @@ export default function AddressClient({ addr }: Props) {
             title="View on Etherscan"
           >
             <ExternalLink className="w-3.5 h-3.5" />
+          </a>
+          <a
+            href={`https://normuseum.vercel.app/?wallet=${addr}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 border border-n-border rounded-md text-xs font-mono text-n-muted hover:text-n-text hover:border-n-text transition-colors flex-shrink-0"
+            title="View in Normuseum"
+          >
+            MUSEUM
           </a>
         </div>
         <div className="text-xs font-mono text-n-faint/60 break-all hidden sm:block">{addr.toLowerCase()}</div>
