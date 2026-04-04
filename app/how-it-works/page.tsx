@@ -170,6 +170,10 @@ export default function HowItWorksPage() {
           className="inline-flex items-center gap-1.5 px-4 py-2 border border-n-border text-xs font-mono text-n-muted hover:text-n-text hover:border-n-text transition-colors rounded">
           museum <ArrowRight className="w-3 h-3" />
         </a>
+        <a href="https://fullnormies.xyz/" target="_blank" rel="noopener noreferrer"
+          className="inline-flex items-center gap-1.5 px-4 py-2 border border-n-border text-xs font-mono text-n-muted hover:text-n-text hover:border-n-text transition-colors rounded">
+          fullnormies <ArrowRight className="w-3 h-3" />
+        </a>
       </div>
 
     </div>

@@ -43,6 +43,10 @@ export default function HomePage() {
             className="inline-flex items-center gap-2 px-4 py-2 border border-n-border text-xs font-mono text-n-muted hover:text-n-text hover:border-n-text transition-colors rounded">
             museum
           </a>
+          <a href="https://fullnormies.xyz/" target="_blank" rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 px-4 py-2 border border-n-border text-xs font-mono text-n-muted hover:text-n-text hover:border-n-text transition-colors rounded">
+            fullnormies
+          </a>
         </div>
       </section>
 

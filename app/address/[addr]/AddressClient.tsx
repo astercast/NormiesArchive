@@ -202,11 +202,11 @@ export default function AddressClient({ addr }: Props) {
             {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
           </button>
           <a
-            href={`https://etherscan.io/address/${addr}`}
+            href={`https://opensea.io/${addr}`}
             target="_blank"
             rel="noopener noreferrer"
             className="p-1.5 border border-n-border rounded-md text-n-muted hover:text-n-text hover:border-n-text transition-colors flex-shrink-0"
-            title="View on Etherscan"
+            title="View on OpenSea"
           >
             <ExternalLink className="w-3.5 h-3.5" />
           </a>
