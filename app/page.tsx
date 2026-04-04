@@ -39,6 +39,10 @@ export default function HomePage() {
             <Flame className="w-3.5 h-3.5" />
             the 100
           </Link>
+          <a href="https://normuseum.vercel.app/" target="_blank" rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 px-4 py-2 border border-n-border text-xs font-mono text-n-muted hover:text-n-text hover:border-n-text transition-colors rounded">
+            museum
+          </a>
         </div>
       </section>
 
