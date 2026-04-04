@@ -211,7 +211,7 @@ export default function AddressClient({ addr }: Props) {
             <ExternalLink className="w-3.5 h-3.5" />
           </a>
           <a
-            href={`https://normuseum.vercel.app/?wallet=${addr}`}
+            href={`https://normuseum.vercel.app/#w=${addr}`}
             target="_blank"
             rel="noopener noreferrer"
             className="flex items-center gap-1.5 px-2.5 py-1.5 border border-n-border rounded-md text-xs font-mono text-n-muted hover:text-n-text hover:border-n-text transition-colors flex-shrink-0"
