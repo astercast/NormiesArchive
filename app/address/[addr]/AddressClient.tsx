@@ -217,7 +217,7 @@ export default function AddressClient({ addr }: Props) {
             className="flex items-center gap-1.5 px-2.5 py-1.5 border border-n-border rounded-md text-xs font-mono text-n-muted hover:text-n-text hover:border-n-text transition-colors flex-shrink-0"
             title="View in Normuseum"
           >
-            MUSEUM
+            museum
           </a>
         </div>
         <div className="text-xs font-mono text-n-faint/60 break-all hidden sm:block">{addr.toLowerCase()}</div>

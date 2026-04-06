@@ -28,7 +28,7 @@ export default function HomePage() {
           the complete pixel history of 10k on-chain faces.
         </p>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <Link href="/leaderboard"
             className="inline-flex items-center gap-2 px-4 py-2 border border-n-border text-xs font-mono text-n-muted hover:text-n-text hover:border-n-text transition-colors rounded">
             <Trophy className="w-3.5 h-3.5" />
