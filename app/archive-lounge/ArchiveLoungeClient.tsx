@@ -2,90 +2,129 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Loader2, Bot, Wifi, Lock } from "lucide-react";
+import { Loader2, Bot, Wifi, Lock, MessageSquare, Users } from "lucide-react";
+import Link from "next/link";
 
-/* ─── API base URLs ──────────────────────────────────────────────────────── */
+/* ── APIs ─────────────────────────────────────────────────────────────────── */
 const AGENTS_API  = "https://api.normies.art";
-const SPRITES_API = "https://fullnormies.vercel.app/api/v1"; // CORS open
+const SPRITES_API = "https://fullnormies.vercel.app/api/v1";
 
-/* ─── Sprite geometry (verified via /full-meta.json) ────────────────────── */
-// Native sprite: 40×80 px, anchor at (20, 64) = foot bottom-center
-// Sheet: 280×80 px, 7 frames × 40 px wide
-//   walk=[0,1,2,3]  stand=[4]  sit=[5]  sleep=[6]
-const NATIVE_W    = 40;
-const NATIVE_H    = 80;
-const SCALE       = 2;                    // display at 2× native
-const SPR_W       = NATIVE_W * SCALE;     // 80  px on canvas
-const SPR_H       = NATIVE_H * SCALE;     // 160 px on canvas
-const ANC_X       = 20 * SCALE;           // 40  — foot from left of sprite
-const ANC_Y       = 64 * SCALE;           // 128 — foot from top of sprite
-const FOOT_BELOW  = SPR_H - ANC_Y;        // 32  — sprite pixels below foot
-const SHEET_FW    = NATIVE_W;             // 40 px per frame in source sheet
+/* ── Sprite geometry (verified via /full-meta.json — anchor y=60) ──────────
+   Sheet: 280×80 native, 7 frames × 40px wide.
+   frames: walk=[0,1,2,3]  stand=[4]  sit=[5]  sleep=[6]
+   At SCALE=2: sheet renders as 560×160, each frame 80px wide.
+   Anchor: foot is at (20,60) native → (40,120) at 2×.
+   Sprites render right-facing; flip with CSS scaleX(-1) for left.           */
+const SCALE      = 2;
+const SPR_W      = 40 * SCALE;   // 80
+const SPR_H      = 80 * SCALE;   // 160
+const ANC_X      = 20 * SCALE;   // 40 — foot from sprite left
+const ANC_Y      = 60 * SCALE;   // 120 — foot from sprite top
+const FOOT_BELOW = SPR_H - ANC_Y;           // 40 — pixels below foot
+const SHEET_CSS_W = 7 * SPR_W;              // 560px — displayed sheet width
+const FRAME_PX    = SPR_W;                  // 80px — one frame in displayed sheet
 
-/* ─── Lounge constants ───────────────────────────────────────────────────── */
-const CANVAS_H      = 560;
-const NAMETAG_H     = 18;           // space reserved for name below sprite
-const WALK_FRAME_MS = 160;          // ms per walk frame
-const BASE_SPEED    = 0.85;         // px per frame at 60 fps
-const TALK_DIST     = SPR_W * 1.6;  // px anchor-to-anchor to start chat
-const TALK_MS       = 6000;
-const CONV_COOL_MS  = 3800;         // min gap between conversation starts
-const MAX_TALKS     = 4;
-const MAX_NORMIES   = 50;
-const IDLE_CHANCE   = 0.0005;       // per-frame idle probability
-const IDLE_MS_MIN   = 1000;
-const IDLE_MS_MAX   = 2500;
-const BATCH_SIZE    = 5;
-const PASSCODE      = "4356";
-const LS_KEY        = "nl_unlocked";
+/* ── Lounge layout ─────────────────────────────────────────────────────── */
+const STAGE_H       = 510;
+const STAGE_CAP     = 12;     // visible at once
+const ROTATE_MS     = 18000;  // swap 2 every 18 s
+const WALK_FRAME_MS = 160;    // 4 frames → 640 ms/cycle
+const STAND_FRAME   = 4;      // sheet column for stand pose
+const SIT_FRAME     = 5;      // sheet column for sit pose
 
-/* ─── Types ──────────────────────────────────────────────────────────────── */
+/* ── Physics ────────────────────────────────────────────────────────────── */
+const BASE_SPEED  = 0.9;
+const TALK_DIST   = SPR_W * 2.0;
+const TALK_MS     = 6200;
+const CONV_COOL   = 4500;
+const MAX_TALKS   = 3;
+const IDLE_CHANCE = 0.00035;
+const IDLE_MIN    = 900;
+const IDLE_MAX    = 2600;
+
+/* ── Misc ────────────────────────────────────────────────────────────────── */
+const PASSCODE        = "4356";
+const LS_KEY          = "nl_unlocked_v3";
+const BATCH_SZ        = 5;
+const MAX_FETCH       = 400;
+const CHAT_MAX        = 45;
+const REGISTRY_PAGE   = 60; // faces shown per "page" in registry
+
+/* ── Types ───────────────────────────────────────────────────────────────── */
 interface AgentItem { agentId: string; tokenId: string; name: string; type: string }
 interface AgentInfo {
   tokenId: string; name: string; type: string;
   tagline?: string; greeting?: string;
   personalityTraits?: string[]; quirks?: string[];
   communicationStyle?: string;
+  canvas?: { level: number; actionPoints: number };
 }
-interface Normie    { tokenId: number; name: string; type: string; info?: AgentInfo }
+interface Normie  { tokenId: number; name: string; type: string; info?: AgentInfo }
 interface Body {
   fx: number; fy: number; vx: number; vy: number;
   facing: 1 | -1;
   walkFrame: number; walkTimer: number;
   state: "walk" | "talk" | "idle";
-  stateUntil: number;     // performance.now() deadline
+  stateUntil: number;
   partnerId: number | null;
 }
-interface Bubble    { id: string; tokenId: number; name: string; text: string; x: number; y: number }
+interface Bubble   { id: string; tokenId: number; name: string; text: string; x: number; y: number }
+interface ChatEntry { id: string; aName: string; aType: string; bName: string; bType: string; text: string; ts: number }
 
-/* ─── Helpers ────────────────────────────────────────────────────────────── */
-function randV(): number {
-  const s = (0.35 + Math.random() * 0.85) * BASE_SPEED;
+/* ── Type speed multipliers & colors ────────────────────────────────────── */
+const TYPE_SPEED: Record<string, number> = { Agent: 0.75, Alien: 0.6, Cat: 1.55, Human: 1.0 };
+const TYPE_COLOR: Record<string, string> = {
+  Agent: "#8b5cf6", Alien: "#10b981", Cat: "#f97316", Human: "",
+};
+
+/* ── Helpers ─────────────────────────────────────────────────────────────── */
+function rv(type?: string): number {
+  const m = TYPE_SPEED[type ?? "Human"] ?? 1;
+  const s = (0.3 + Math.random() * 0.9) * BASE_SPEED * m;
   return Math.random() < 0.5 ? s : -s;
 }
 function pickText(info?: AgentInfo): string {
   if (!info) return "…";
-  const pool: string[] = [];
-  if (info.greeting)           pool.push(info.greeting);
-  if (info.tagline)            pool.push(info.tagline);
-  if (info.communicationStyle) pool.push(info.communicationStyle);
-  info.personalityTraits?.slice(0, 3).forEach(t => pool.push(t));
-  info.quirks?.slice(0, 2).forEach(t => pool.push(t));
-  return pool.length ? pool[Math.floor(Math.random() * pool.length)] : "…";
+  const p: string[] = [];
+  if (info.greeting)           p.push(info.greeting);
+  if (info.tagline)            p.push(info.tagline);
+  if (info.communicationStyle) p.push(info.communicationStyle);
+  info.personalityTraits?.slice(0, 3).forEach(t => p.push(t));
+  info.quirks?.slice(0, 2).forEach(t => p.push(t));
+  return p.length ? p[Math.floor(Math.random() * p.length)] : "…";
 }
 function trunc(s: string, n: number) { return s.length > n ? s.slice(0, n - 1) + "…" : s; }
-function makeBody(cw: number): Body {
-  const minFx = ANC_X + 12;
-  const maxFx = cw - (SPR_W - ANC_X) - 12;
-  const minFy = ANC_Y + 12;
-  const maxFy = CANVAS_H - FOOT_BELOW - NAMETAG_H - 12;
+function timeAgo(ts: number): string {
+  const s = Math.round((Date.now() - ts) / 1000);
+  if (s < 10)  return "just now";
+  if (s < 60)  return `${s}s ago`;
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  return `${Math.floor(s / 3600)}h ago`;
+}
+
+function mkBody(cw: number, type?: string, edge?: boolean): Body {
+  const minFx = ANC_X + 10, maxFx = cw  - (SPR_W - ANC_X) - 10;
+  const minFy = ANC_Y + 10, maxFy = STAGE_H - FOOT_BELOW - 20;
+  const m = TYPE_SPEED[type ?? "Human"] ?? 1;
+  const speed = (0.4 + Math.random() * 0.7) * BASE_SPEED * m;
+  const fy = minFy + Math.random() * Math.max(0, maxFy - minFy);
+
+  if (edge) {
+    // spawn at left or right edge, walk inward
+    const left = Math.random() < 0.5;
+    return {
+      fx: left ? minFx : maxFx, fy,
+      vx: left ? speed : -speed, vy: (Math.random() - 0.5) * 0.3,
+      facing: left ? 1 : -1,
+      walkFrame: 0, walkTimer: 0,
+      state: "walk", stateUntil: 0, partnerId: null,
+    };
+  }
   return {
-    fx: minFx + Math.random() * Math.max(0, maxFx - minFx),
-    fy: minFy + Math.random() * Math.max(0, maxFy - minFy),
-    vx: randV(), vy: randV() * 0.35,
+    fx: minFx + Math.random() * Math.max(0, maxFx - minFx), fy,
+    vx: rv(type), vy: rv(type) * 0.32,
     facing: Math.random() < 0.5 ? 1 : -1,
-    walkFrame: Math.floor(Math.random() * 4),
-    walkTimer: Math.random() * WALK_FRAME_MS,
+    walkFrame: Math.floor(Math.random() * 4), walkTimer: 0,
     state: "walk", stateUntil: 0, partnerId: null,
   };
 }
@@ -94,118 +133,77 @@ function makeBody(cw: number): Body {
    LOCK SCREEN
 ══════════════════════════════════════════════════════════════════════════ */
 function LockScreen({ onUnlock }: { onUnlock: () => void }) {
-  const [digits, setDigits]   = useState<string[]>([]);
-  const [shake, setShake]     = useState(false);
+  const [digits,  setDigits]  = useState<string[]>([]);
+  const [shake,   setShake]   = useState(false);
   const [success, setSuccess] = useState(false);
   const hiddenRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { hiddenRef.current?.focus(); }, []);
 
   const push = useCallback((d: string) => {
-    if (shake) return;
+    if (shake || success) return;
     setDigits(prev => {
       if (prev.length >= 4) return prev;
       const next = [...prev, d];
       if (next.length === 4) {
         if (next.join("") === PASSCODE) {
           setSuccess(true);
-          setTimeout(onUnlock, 500);
+          setTimeout(onUnlock, 450);
         } else {
           setShake(true);
           setTimeout(() => { setShake(false); setDigits([]); }, 600);
-          return next; // briefly show filled before clear
         }
       }
       return next;
     });
-  }, [shake, onUnlock]);
+  }, [shake, success, onUnlock]);
 
-  const pop = useCallback(() => { if (!shake) setDigits(prev => prev.slice(0, -1)); }, [shake]);
-
-  const handleKey = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (/^\d$/.test(e.key)) push(e.key);
-    else if (e.key === "Backspace") pop();
-  }, [push, pop]);
+  const pop = useCallback(() => {
+    if (!shake && !success) setDigits(p => p.slice(0, -1));
+  }, [shake, success]);
 
   return (
     <div
       className="flex flex-col items-center justify-center min-h-[60vh] gap-8 select-none"
       onClick={() => hiddenRef.current?.focus()}
     >
-      {/* Hidden real input for keyboard */}
-      <input
-        ref={hiddenRef}
-        className="sr-only"
-        onKeyDown={handleKey}
-        readOnly
-        value=""
-        inputMode="numeric"
-      />
+      <input ref={hiddenRef} className="sr-only" readOnly value=""
+        onKeyDown={e => { if (/^\d$/.test(e.key)) push(e.key); else if (e.key === "Backspace") pop(); }} />
 
-      {/* Icon */}
-      <motion.div
-        animate={success ? { scale: [1, 1.2, 1], rotate: [0, 10, -10, 0] } : {}}
-        className="flex flex-col items-center gap-3"
-      >
-        <Lock className={`w-8 h-8 ${success ? "text-cyan-500" : "text-n-muted"} transition-colors`} />
-        <p className="text-xs font-mono text-n-faint uppercase tracking-widest">archive lounge</p>
+      <motion.div className="flex flex-col items-center gap-2"
+        animate={success ? { scale: [1, 1.15, 1] } : {}}>
+        <Lock className={`w-7 h-7 transition-colors ${success ? "text-cyan-500" : "text-n-muted"}`} />
+        <p className="text-[10px] font-mono text-n-faint uppercase tracking-widest">archive lounge</p>
       </motion.div>
 
-      {/* 4-digit display */}
-      <motion.div
-        animate={shake ? { x: [-8, 8, -8, 8, -4, 4, 0] } : {}}
-        transition={{ duration: 0.4 }}
-        className="flex gap-3"
-      >
-        {[0, 1, 2, 3].map(i => {
-          const filled = i < digits.length;
-          const active = i === digits.length;
-          return (
-            <div
-              key={i}
-              className={`w-11 h-13 border rounded flex items-center justify-center transition-all duration-150 ${
-                success
-                  ? "border-cyan-400 bg-cyan-50 dark:bg-cyan-900/30"
-                  : shake
-                    ? "border-red-400 bg-red-50 dark:bg-red-900/20"
-                    : filled
-                      ? "border-n-text bg-n-surface"
-                      : active
-                        ? "border-n-muted bg-n-surface"
-                        : "border-n-border bg-n-bg"
-              }`}
-              style={{ width: 44, height: 52 }}
-            >
-              <span className={`font-mono text-lg ${
-                success ? "text-cyan-600 dark:text-cyan-400" :
-                shake    ? "text-red-500" : "text-n-text"
-              }`}>
-                {filled ? "●" : active ? <span className="animate-blink">_</span> : ""}
-              </span>
-            </div>
-          );
-        })}
-      </motion.div>
-
-      {/* Number pad */}
-      <div className="grid grid-cols-3 gap-2">
-        {["1","2","3","4","5","6","7","8","9","←","0",""].map((k, i) => (
-          <button
-            key={i}
-            onClick={() => { if (k === "←") pop(); else if (k) push(k); }}
-            disabled={!k || shake}
-            className={`w-12 h-12 font-mono text-sm border rounded transition-colors ${
-              k
-                ? "border-n-border text-n-muted hover:border-n-text hover:text-n-text hover:bg-n-surface active:bg-n-surface"
-                : "invisible"
+      <motion.div className="flex gap-2.5"
+        animate={shake ? { x: [-10, 10, -8, 8, -4, 4, 0] } : {}} transition={{ duration: 0.4 }}>
+        {[0, 1, 2, 3].map(i => (
+          <div key={i} style={{ width: 44, height: 52 }}
+            className={`border rounded flex items-center justify-center transition-all text-lg font-mono ${
+              success ? "border-cyan-400 bg-cyan-50 dark:bg-cyan-900/30 text-cyan-600 dark:text-cyan-400"
+              : shake ? "border-red-400 bg-red-50 dark:bg-red-900/20 text-red-500"
+              : i < digits.length ? "border-n-text bg-n-surface text-n-text"
+              : i === digits.length ? "border-n-muted bg-n-surface text-n-text"
+              : "border-n-border bg-n-bg text-n-faint"
             }`}
           >
-            {k}
-          </button>
+            {i < digits.length ? "●" : i === digits.length ? <span className="animate-blink">_</span> : ""}
+          </div>
+        ))}
+      </motion.div>
+
+      <div className="grid grid-cols-3 gap-2">
+        {["1","2","3","4","5","6","7","8","9","←","0",""].map((k, i) => (
+          <button key={i} onClick={() => k === "←" ? pop() : k ? push(k) : undefined}
+            disabled={!k || shake}
+            className={`w-12 h-12 font-mono text-sm border rounded transition-colors ${
+              k ? "border-n-border text-n-muted hover:border-n-text hover:text-n-text hover:bg-n-surface"
+                : "invisible"}`}
+          >{k}</button>
         ))}
       </div>
-
-      <p className="text-[10px] font-mono text-n-faint">enter passcode to enter</p>
+      <p className="text-[10px] font-mono text-n-faint">enter passcode</p>
     </div>
   );
 }
@@ -214,49 +212,63 @@ function LockScreen({ onUnlock }: { onUnlock: () => void }) {
    LOUNGE ROOM
 ══════════════════════════════════════════════════════════════════════════ */
 function LoungeRoom() {
-  const [normies,     setNormies]     = useState<Normie[]>([]);
-  const [total,       setTotal]       = useState(0);
-  const [loading,     setLoading]     = useState(true);
-  const [infoLoaded,  setInfoLoaded]  = useState(0);
-  const [dark,        setDark]        = useState(false);
-  const [bubbles,     setBubbles]     = useState<Bubble[]>([]);
+  /* ── React state (causes re-renders) ── */
+  const [allAgents,    setAllAgents]    = useState<AgentItem[]>([]);
+  const [infoMap,      setInfoMap]      = useState<Map<number, AgentInfo>>(new Map());
+  const [loungeIds,    setLoungeIds]    = useState<number[]>([]);
+  const [bubbles,      setBubbles]      = useState<Bubble[]>([]);
+  const [chatLog,      setChatLog]      = useState<ChatEntry[]>([]);
+  const [total,        setTotal]        = useState(0);
+  const [loading,      setLoading]      = useState(true);
+  const [dark,         setDark]         = useState(false);
+  const [regPage,      setRegPage]      = useState(1);
+  const [infoProgress, setInfoProgress] = useState(0);
 
-  /* refs — mutable, live inside rAF loop without stale closures */
-  const canvasRef    = useRef<HTMLCanvasElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
+  /* ── Refs — mutated in rAF, never trigger renders ── */
+  const stageRef     = useRef<HTMLDivElement>(null);
+  const bgCanvasRef  = useRef<HTMLCanvasElement>(null);
   const rafRef       = useRef<number>(0);
-  const prevNow      = useRef<number>(0);
+  const prevNow      = useRef(0);
   const darkRef      = useRef(false);
-  const normiesRef   = useRef<Normie[]>([]);
+  const loungeRef    = useRef<number[]>([]);     // mirror of loungeIds for rAF
+  const allRef       = useRef<AgentItem[]>([]);  // mirror of allAgents
+  const infoRef      = useRef<Map<number, AgentInfo>>(new Map());
   const bodies       = useRef<Map<number, Body>>(new Map());
-  /* sheets[tokenId] = 280×80 sprite sheet HTMLImageElement */
-  const sheets       = useRef<Map<number, HTMLImageElement>>(new Map());
-  const lastConv     = useRef<number>(-CONV_COOL_MS);
-  const lastCheck    = useRef<number>(0);
-  const convCount    = useRef<number>(0);
+  const spriteRefs   = useRef<Map<number, HTMLDivElement>>(new Map());
+  const nameRefs     = useRef<Map<number, HTMLDivElement>>(new Map());
+  const lastConv     = useRef(-CONV_COOL);
+  const lastCheck    = useRef(0);
+  const convCount    = useRef(0);
+  const walkFrames   = useRef<Map<number, number>>(new Map());
 
-  useEffect(() => { normiesRef.current = normies; }, [normies]);
-  useEffect(() => { darkRef.current = dark; },      [dark]);
+  /* keep refs in sync */
+  useEffect(() => { loungeRef.current = loungeIds; }, [loungeIds]);
+  useEffect(() => { allRef.current    = allAgents;  }, [allAgents]);
+  useEffect(() => { darkRef.current   = dark;        }, [dark]);
+  useEffect(() => { infoRef.current   = infoMap;     }, [infoMap]);
 
   /* ── Dark mode observer ─────────────────────────────────────────────── */
   useEffect(() => {
-    const check = () => {
-      const d = document.documentElement.classList.contains("dark");
-      setDark(d); darkRef.current = d;
-    };
-    check();
-    const mo = new MutationObserver(check);
+    const chk = () => { const d = document.documentElement.classList.contains("dark"); setDark(d); darkRef.current = d; };
+    chk();
+    const mo = new MutationObserver(chk);
     mo.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
     return () => mo.disconnect();
   }, []);
 
-  /* ── Load sprite sheet ──────────────────────────────────────────────── */
-  const loadSheet = useCallback((tokenId: number) => {
-    if (sheets.current.has(tokenId)) return;
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.src = `${SPRITES_API}/normies/${tokenId}/sheet.png`;
-    sheets.current.set(tokenId, img);
+  /* ── Bring a normie onto the stage ─────────────────────────────────── */
+  const bringToStage = useCallback((tokenId: number, type?: string, fromEdge = true) => {
+    setLoungeIds(prev => {
+      if (prev.includes(tokenId)) return prev;
+      const cw = stageRef.current?.clientWidth ?? 960;
+      bodies.current.set(tokenId, mkBody(cw, type, fromEdge));
+      walkFrames.current.set(tokenId, 0);
+      if (prev.length < STAGE_CAP) return [...prev, tokenId];
+      const removable = prev.filter(id => bodies.current.get(id)?.state !== "talk");
+      if (!removable.length) return prev;
+      const rm = removable[Math.floor(Math.random() * removable.length)];
+      return [...prev.filter(id => id !== rm), tokenId];
+    });
   }, []);
 
   /* ── Data fetch ─────────────────────────────────────────────────────── */
@@ -265,14 +277,14 @@ function LoungeRoom() {
     (async () => {
       setLoading(true);
       try {
+        /* total count */
         const cntData = await fetch(`${AGENTS_API}/agents/count`).then(r => r.json()).catch(() => null);
         if (!cancelled && cntData) setTotal(cntData.count ?? 0);
 
-        /* paginate agents/list */
-        let cursor: string | null = null;
-        let hasMore = true;
+        /* paginate all agents */
+        let cursor: string | null = null, hasMore = true;
         const collected: AgentItem[] = [];
-        while (hasMore && collected.length < MAX_NORMIES) {
+        while (hasMore && collected.length < MAX_FETCH) {
           const url = new URL(`${AGENTS_API}/agents/list`);
           url.searchParams.set("limit", "100");
           url.searchParams.set("sort", "newest");
@@ -282,25 +294,27 @@ function LoungeRoom() {
           hasMore = d.hasMore ?? false;
           if (!items.length) break;
           cursor = items[items.length - 1].agentId;
-          for (const it of items) {
-            if (collected.length >= MAX_NORMIES) break;
-            collected.push(it);
-          }
+          items.slice(0, MAX_FETCH - collected.length).forEach(it => collected.push(it));
         }
         if (cancelled) return;
 
-        /* seed normies without persona — start walking immediately */
-        const base: Normie[] = collected.map(a => ({
-          tokenId: Number(a.tokenId), name: a.name, type: a.type,
-        }));
-        setNormies(base);
+        setAllAgents(collected);
         setLoading(false);
-        base.forEach(n => loadSheet(n.tokenId));
 
-        /* enrich with persona in batches */
-        for (let i = 0; i < collected.length; i += BATCH_SIZE) {
+        /* seed initial stage */
+        const seed = [...collected].sort(() => Math.random() - 0.5).slice(0, STAGE_CAP);
+        const cw = stageRef.current?.clientWidth ?? 960;
+        seed.forEach(a => {
+          const tid = Number(a.tokenId);
+          bodies.current.set(tid, mkBody(cw, a.type, false));
+          walkFrames.current.set(tid, Math.floor(Math.random() * 4));
+        });
+        setLoungeIds(seed.map(a => Number(a.tokenId)));
+
+        /* load personas in batches */
+        for (let i = 0; i < collected.length; i += BATCH_SZ) {
           if (cancelled) break;
-          const batch = collected.slice(i, i + BATCH_SIZE);
+          const batch = collected.slice(i, i + BATCH_SZ);
           const infos = await Promise.all(batch.map(async item => {
             try {
               const r = await fetch(`${AGENTS_API}/agents/info/${item.tokenId}`);
@@ -308,126 +322,153 @@ function LoungeRoom() {
             } catch { return null; }
           }));
           if (cancelled) break;
-          setNormies(prev => {
-            const next = [...prev];
-            infos.forEach((info, j) => {
-              if (!info) return;
-              const idx = next.findIndex(n => n.tokenId === Number(batch[j].tokenId));
-              if (idx >= 0) next[idx] = { ...next[idx], info };
-            });
+          setInfoMap(prev => {
+            const next = new Map(prev);
+            infos.forEach((info, j) => { if (info) next.set(Number(batch[j].tokenId), info); });
             return next;
           });
-          setInfoLoaded(i + BATCH_SIZE);
-          await new Promise(r => setTimeout(r, 250));
+          setInfoProgress(Math.min(i + BATCH_SZ, collected.length));
+          await new Promise(r => setTimeout(r, 200));
         }
-      } catch (err) {
-        console.error("[LoungeRoom] fetch error:", err);
+      } catch (e) {
+        console.error("[Lounge]", e);
         if (!cancelled) setLoading(false);
       }
     })();
     return () => { cancelled = true; };
-  }, [loadSheet]);
+  }, []);
 
-  /* ── Main rAF loop ──────────────────────────────────────────────────── */
+  /* ── Rotation timer ─────────────────────────────────────────────────── */
+  useEffect(() => {
+    const t = setInterval(() => {
+      const all = allRef.current;
+      if (!all.length) return;
+      setLoungeIds(prev => {
+        const cw = stageRef.current?.clientWidth ?? 960;
+        const removable = prev.filter(id => bodies.current.get(id)?.state !== "talk");
+        const numSwap = Math.min(2, removable.length);
+        if (!numSwap) return prev;
+        const toRemove = [...removable].sort(() => Math.random() - 0.5).slice(0, numSwap);
+        const next = prev.filter(id => !toRemove.includes(id));
+        const pool = all.filter(a => !next.includes(Number(a.tokenId)));
+        for (let i = 0; i < numSwap && i < pool.length; i++) {
+          const pick = pool[Math.floor(Math.random() * Math.min(pool.length, 40))];
+          const tid = Number(pick.tokenId);
+          if (!next.includes(tid)) {
+            bodies.current.set(tid, mkBody(cw, pick.type, true));
+            walkFrames.current.set(tid, 0);
+            next.push(tid);
+          }
+        }
+        return next;
+      });
+    }, ROTATE_MS);
+    return () => clearInterval(t);
+  }, []);
+
+  /* ── Walk frame ticker (updates DOM directly — no React re-render) ───── */
+  useEffect(() => {
+    const t = setInterval(() => {
+      for (const id of loungeRef.current) {
+        const b    = bodies.current.get(id);
+        const el   = spriteRefs.current.get(id);
+        if (!el || !b) continue;
+        if (b.state === "walk") {
+          const next = ((walkFrames.current.get(id) ?? 0) + 1) % 4;
+          walkFrames.current.set(id, next);
+          el.style.backgroundPositionX = `${-next * FRAME_PX}px`;
+        } else {
+          const frame = b.state === "idle" ? SIT_FRAME : STAND_FRAME;
+          el.style.backgroundPositionX = `${-frame * FRAME_PX}px`;
+        }
+      }
+    }, WALK_FRAME_MS);
+    return () => clearInterval(t);
+  }, []);
+
+  /* ── Main rAF — physics + position DOM updates + bg canvas ──────────── */
   useEffect(() => {
     const loop = (now: number) => {
       const dt = Math.min(now - prevNow.current, 50);
       prevNow.current = now;
 
-      const canvas = canvasRef.current;
-      if (!canvas) { rafRef.current = requestAnimationFrame(loop); return; }
-      const ctx = canvas.getContext("2d");
-      if (!ctx)    { rafRef.current = requestAnimationFrame(loop); return; }
-
-      const cw     = canvas.width;
+      const stage  = stageRef.current;
+      const canvas = bgCanvasRef.current;
+      const cw     = stage?.clientWidth ?? 960;
       const isDark = darkRef.current;
-      const norms  = normiesRef.current;
+      const ids    = loungeRef.current;
       const bods   = bodies.current;
 
-      /* wall bounds (in foot-anchor coords) */
-      const minFx = ANC_X + 12;
-      const maxFx = cw - (SPR_W - ANC_X) - 12;
-      const minFy = ANC_Y + 12;
-      const maxFy = CANVAS_H - FOOT_BELOW - NAMETAG_H - 12;
+      const minFx = ANC_X + 10, maxFx = cw  - (SPR_W - ANC_X) - 10;
+      const minFy = ANC_Y + 10, maxFy = STAGE_H - FOOT_BELOW - 20;
 
-      /* ── Physics ───────────────────────────────────────────────────── */
-      for (const n of norms) {
-        /* lazy-init body using current canvas width */
-        if (!bods.has(n.tokenId)) bods.set(n.tokenId, makeBody(cw));
-        const b = bods.get(n.tokenId)!;
+      /* ── Physics ── */
+      for (const id of ids) {
+        if (!bods.has(id)) bods.set(id, mkBody(cw, undefined, false));
+        const b = bods.get(id)!;
 
         if (b.state === "talk" || b.state === "idle") {
-          const wasT = b.state === "talk";
           if (now > b.stateUntil) {
-            if (wasT) convCount.current = Math.max(0, convCount.current - 1);
+            const wasTalk = b.state === "talk";
             b.state = "walk"; b.partnerId = null;
-            b.vx = randV(); b.vy = randV() * 0.35;
-          }
-          /* walk frame ticks slowly while idle (gentle bob) */
-          if (b.state === "idle") {
-            b.walkTimer += dt;
-            if (b.walkTimer > WALK_FRAME_MS * 3) b.walkTimer = 0;
+            b.vx = rv(); b.vy = rv() * 0.32;
+            if (wasTalk) convCount.current = Math.max(0, convCount.current - 1);
           }
           continue;
         }
 
-        /* random idle chance */
         if (Math.random() < IDLE_CHANCE * (dt / 16)) {
           b.state = "idle";
-          b.stateUntil = now + IDLE_MS_MIN + Math.random() * (IDLE_MS_MAX - IDLE_MS_MIN);
+          b.stateUntil = now + IDLE_MIN + Math.random() * (IDLE_MAX - IDLE_MIN);
           continue;
         }
 
-        /* move */
         const step = dt / 16;
         b.fx += b.vx * step;
         b.fy += b.vy * step;
-
-        /* bounce off walls */
         if (b.fx < minFx) { b.fx = minFx; b.vx =  Math.abs(b.vx); }
         if (b.fx > maxFx) { b.fx = maxFx; b.vx = -Math.abs(b.vx); }
         if (b.fy < minFy) { b.fy = minFy; b.vy =  Math.abs(b.vy); }
         if (b.fy > maxFy) { b.fy = maxFy; b.vy = -Math.abs(b.vy); }
-
         if (Math.abs(b.vx) > 0.06) b.facing = b.vx > 0 ? 1 : -1;
-
-        b.walkTimer += dt;
-        if (b.walkTimer >= WALK_FRAME_MS) {
-          b.walkTimer = 0;
-          b.walkFrame = (b.walkFrame + 1) % 4;
-        }
       }
 
-      /* ── Conversation proximity scan (10×/s) ──────────────────────── */
+      /* ── Conversation scan (10×/s) ── */
       if (now - lastCheck.current > 100) {
         lastCheck.current = now;
-        if (convCount.current < MAX_TALKS && now - lastConv.current > CONV_COOL_MS) {
+        if (convCount.current < MAX_TALKS && now - lastConv.current > CONV_COOL) {
+          const norms = ids.map(id => ({ id, b: bods.get(id) })).filter(x => x.b?.state === "walk");
           outer: for (let i = 0; i < norms.length; i++) {
-            const bA = bods.get(norms[i].tokenId);
-            if (!bA || bA.state !== "walk") continue;
             for (let j = i + 1; j < norms.length; j++) {
-              const bB = bods.get(norms[j].tokenId);
-              if (!bB || bB.state !== "walk") continue;
+              const { id: idA, b: bA } = norms[i];
+              const { id: idB, b: bB } = norms[j];
+              if (!bA || !bB) continue;
               const d = Math.hypot(bA.fx - bB.fx, bA.fy - bB.fy);
               if (d < TALK_DIST) {
-                const endTime = now + TALK_MS;
-                bA.state = "talk"; bA.stateUntil = endTime; bA.partnerId = norms[j].tokenId;
-                bB.state = "talk"; bB.stateUntil = endTime; bB.partnerId = norms[i].tokenId;
+                const end = now + TALK_MS;
+                bA.state = "talk"; bA.stateUntil = end; bA.partnerId = idB;
+                bB.state = "talk"; bB.stateUntil = end; bB.partnerId = idA;
                 bA.facing = bA.fx < bB.fx ? 1 : -1;
                 bB.facing = bB.fx < bA.fx ? 1 : -1;
-                lastConv.current = now;
-                convCount.current++;
+                lastConv.current = now; convCount.current++;
 
-                const uid = `${now | 0}`;
-                const bblA: Bubble = { id: `${norms[i].tokenId}-${uid}`, tokenId: norms[i].tokenId, name: norms[i].name, text: pickText(norms[i].info), x: bA.fx, y: bA.fy - ANC_Y };
-                const bblB: Bubble = { id: `${norms[j].tokenId}-${uid}`, tokenId: norms[j].tokenId, name: norms[j].name, text: pickText(norms[j].info), x: bB.fx, y: bB.fy - ANC_Y };
-
-                setBubbles(prev => [
-                  ...prev.filter(b => b.tokenId !== norms[i].tokenId && b.tokenId !== norms[j].tokenId),
-                  bblA, bblB,
-                ]);
-                const aId = bblA.id, bId = bblB.id;
-                setTimeout(() => setBubbles(p => p.filter(b => b.id !== aId && b.id !== bId)), TALK_MS + 600);
+                const infoA = infoRef.current.get(idA);
+                const infoB = infoRef.current.get(idB);
+                const textA = pickText(infoA);
+                const textB = pickText(infoB);
+                const uid   = String(now | 0);
+                const bblA: Bubble = { id: `${idA}-${uid}`, tokenId: idA, name: infoA?.name ?? `#${idA}`, text: textA, x: bA.fx, y: bA.fy - ANC_Y };
+                const bblB: Bubble = { id: `${idB}-${uid}`, tokenId: idB, name: infoB?.name ?? `#${idB}`, text: textB, x: bB.fx, y: bB.fy - ANC_Y };
+                setBubbles(p => [...p.filter(b => b.tokenId !== idA && b.tokenId !== idB), bblA, bblB]);
+                const chat: ChatEntry = {
+                  id: uid, ts: Date.now(),
+                  aName: infoA?.name ?? `#${idA}`, aType: infoA?.type ?? "",
+                  bName: infoB?.name ?? `#${idB}`, bType: infoB?.type ?? "",
+                  text: textA,
+                };
+                setChatLog(p => [chat, ...p].slice(0, CHAT_MAX));
+                const [aId, bId] = [bblA.id, bblB.id];
+                setTimeout(() => setBubbles(p => p.filter(b => b.id !== aId && b.id !== bId)), TALK_MS + 500);
                 break outer;
               }
             }
@@ -435,112 +476,68 @@ function LoungeRoom() {
         }
       }
 
-      /* ── Render ────────────────────────────────────────────────────── */
-      ctx.clearRect(0, 0, cw, CANVAS_H);
-
-      /* dot grid */
-      ctx.fillStyle = isDark ? "rgba(255,255,255,0.028)" : "rgba(0,0,0,0.042)";
-      for (let gx = 20; gx < cw;       gx += 20)
-      for (let gy = 20; gy < CANVAS_H; gy += 20)
-        ctx.fillRect(gx - 0.5, gy - 0.5, 1.5, 1.5);
-
-      /* floor glow */
-      const flY = CANVAS_H - 6;
-      const flG = ctx.createLinearGradient(0, flY - 50, 0, CANVAS_H);
-      flG.addColorStop(0, isDark ? "rgba(6,182,212,0)"    : "rgba(72,73,75,0)");
-      flG.addColorStop(1, isDark ? "rgba(6,182,212,0.13)" : "rgba(72,73,75,0.08)");
-      ctx.fillStyle = flG;
-      ctx.fillRect(0, flY - 50, cw, CANVAS_H - (flY - 50));
-      ctx.fillStyle = isDark ? "rgba(6,182,212,0.45)" : "rgba(72,73,75,0.16)";
-      ctx.fillRect(0, flY, cw, 1);
-
-      /* sort sprites back-to-front by Y (pseudo depth) */
-      const sorted = [...norms].sort(
-        (a, b) => (bods.get(a.tokenId)?.fy ?? 0) - (bods.get(b.tokenId)?.fy ?? 0)
-      );
-
-      /* ── Draw each normie ── */
-      for (const n of sorted) {
-        const body  = bods.get(n.tokenId);
-        const sheet = sheets.current.get(n.tokenId);
-        if (!body) continue;
-
-        /* which sheet frame to show */
-        const frameIdx =
-          body.state === "talk" ? 4 :         // stand
-          body.state === "idle" ? 4 :          // stand
-          body.walkFrame;                      // 0-3 walk
-
-        const srcX  = frameIdx * SHEET_FW;    // source x in sheet (multiples of 40)
-        const dstX  = Math.round(body.fx - ANC_X);
-        const dstY  = Math.round(body.fy - ANC_Y);
-
-        const canDraw = sheet?.complete && (sheet.naturalWidth > 0);
-
-        ctx.save();
-
-        /* invert sprite colours for dark mode:
-           - transparent pixels stay transparent (alpha not inverted)
-           - #e3e5e4 (off-pixel) → #1c1a1b  (nearly invisible on dark bg)
-           - #48494b (on-pixel)  → #b6b6b4  (light, visible on dark bg)   */
-        if (isDark) ctx.filter = "invert(1)";
-
-        if (body.facing === -1) {
-          /* flip horizontally around the sprite's centre */
-          ctx.translate(dstX + SPR_W, dstY);
-          ctx.scale(-1, 1);
-          if (canDraw) {
-            ctx.imageSmoothingEnabled = false;
-            ctx.drawImage(sheet!, srcX, 0, SHEET_FW, NATIVE_H, 0, 0, SPR_W, SPR_H);
-          } else {
-            ctx.fillStyle = isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.06)";
-            ctx.fillRect(0, 0, SPR_W, SPR_H);
-          }
-        } else {
-          if (canDraw) {
-            ctx.imageSmoothingEnabled = false;
-            ctx.drawImage(sheet!, srcX, 0, SHEET_FW, NATIVE_H, dstX, dstY, SPR_W, SPR_H);
-          } else {
-            ctx.fillStyle = isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.06)";
-            ctx.fillRect(dstX, dstY, SPR_W, SPR_H);
-          }
+      /* ── Update sprite DOM positions (no React re-render) ── */
+      for (const id of ids) {
+        const b   = bods.get(id);
+        const sel = spriteRefs.current.get(id);
+        const nel = nameRefs.current.get(id);
+        if (!b) continue;
+        const lx = Math.round(b.fx - ANC_X);
+        const ly = Math.round(b.fy - ANC_Y);
+        if (sel) {
+          sel.style.left      = `${lx}px`;
+          sel.style.top       = `${ly}px`;
+          sel.style.transform = b.facing === -1 ? "scaleX(-1)" : "";
+          sel.style.filter    = isDark ? "invert(1)" : "none";
+          sel.style.zIndex    = String(Math.round(b.fy));
         }
+        if (nel) {
+          nel.style.left = `${lx}px`;
+          nel.style.top  = `${ly + SPR_H + 2}px`;
+          nel.style.zIndex = String(Math.round(b.fy));
+        }
+      }
 
-        ctx.filter = "none";
+      /* ── Background canvas (dot grid + floor + conversation lines) ── */
+      if (canvas && stage) {
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+          canvas.width  = cw;
+          canvas.height = STAGE_H;
+          ctx.clearRect(0, 0, cw, STAGE_H);
 
-        /* dashed conversation link line (drawn once per pair from lower tokenId) */
-        if (body.state === "talk" && body.partnerId !== null && body.partnerId > n.tokenId) {
-          const pb = bods.get(body.partnerId);
-          if (pb) {
-            ctx.setLineDash([3, 6]);
-            ctx.strokeStyle = isDark ? "rgba(6,182,212,0.3)" : "rgba(72,73,75,0.15)";
-            ctx.lineWidth = 1;
+          /* dot grid */
+          ctx.fillStyle = isDark ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.04)";
+          for (let gx = 20; gx < cw;      gx += 20)
+          for (let gy = 20; gy < STAGE_H; gy += 20)
+            ctx.fillRect(gx - 0.5, gy - 0.5, 1.5, 1.5);
+
+          /* floor glow */
+          const flY = STAGE_H - 8;
+          const flG = ctx.createLinearGradient(0, flY - 40, 0, STAGE_H);
+          flG.addColorStop(0, isDark ? "rgba(6,182,212,0)" : "rgba(72,73,75,0)");
+          flG.addColorStop(1, isDark ? "rgba(6,182,212,0.12)" : "rgba(72,73,75,0.07)");
+          ctx.fillStyle = flG;
+          ctx.fillRect(0, flY - 40, cw, STAGE_H - (flY - 40));
+          ctx.fillStyle = isDark ? "rgba(6,182,212,0.4)" : "rgba(72,73,75,0.14)";
+          ctx.fillRect(0, flY, cw, 1);
+
+          /* conversation link lines */
+          ctx.setLineDash([3, 7]);
+          ctx.lineWidth = 1;
+          ctx.strokeStyle = isDark ? "rgba(6,182,212,0.22)" : "rgba(72,73,75,0.13)";
+          for (const id of ids) {
+            const b = bods.get(id);
+            if (b?.state !== "talk" || !b.partnerId || b.partnerId < id) continue;
+            const pb = bods.get(b.partnerId);
+            if (!pb) continue;
             ctx.beginPath();
-            ctx.moveTo(body.fx, body.fy - ANC_Y * 0.35);
-            ctx.lineTo(pb.fx,   pb.fy   - ANC_Y * 0.35);
+            ctx.moveTo(b.fx,  b.fy  - ANC_Y * 0.3);
+            ctx.lineTo(pb.fx, pb.fy - ANC_Y * 0.3);
             ctx.stroke();
-            ctx.setLineDash([]);
           }
+          ctx.setLineDash([]);
         }
-
-        /* name tag */
-        const tagY = body.fy + FOOT_BELOW + 9;
-        ctx.font = `500 7px "IBM Plex Mono",monospace`;
-        ctx.textAlign = "center";
-        ctx.fillStyle = isDark ? "rgba(212,213,211,0.45)" : "rgba(72,73,75,0.45)";
-        ctx.fillText(trunc(n.name, 16), body.fx, tagY);
-
-        /* small state dot */
-        if (body.state !== "walk") {
-          ctx.beginPath();
-          ctx.arc(body.fx, tagY + 7, 2, 0, Math.PI * 2);
-          ctx.fillStyle = body.state === "talk"
-            ? (isDark ? "#22d3ee" : "#0891b2")
-            : (isDark ? "rgba(212,213,211,0.3)" : "rgba(72,73,75,0.3)");
-          ctx.fill();
-        }
-
-        ctx.restore();
       }
 
       rafRef.current = requestAnimationFrame(loop);
@@ -549,186 +546,288 @@ function LoungeRoom() {
     prevNow.current = performance.now();
     rafRef.current = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(rafRef.current);
-  }, []); // intentionally no deps — all mutable state via refs
+  }, []); // intentionally empty — everything via refs
 
-  /* ── Canvas resize ──────────────────────────────────────────────────── */
-  useEffect(() => {
-    const resize = () => {
-      const c  = canvasRef.current;
-      const ct = containerRef.current;
-      if (!c || !ct) return;
-      c.width  = ct.clientWidth;
-      c.height = CANVAS_H;
-    };
-    resize();
-    const ro = new ResizeObserver(resize);
-    if (containerRef.current) ro.observe(containerRef.current);
-    return () => ro.disconnect();
-  }, []);
+  /* ── Derive which normies are in lounge ──────────────────────────────── */
+  const loungeNormies = loungeIds.map(id => {
+    const a = allAgents.find(x => Number(x.tokenId) === id);
+    return { tokenId: id, name: a?.name ?? `#${id}`, type: a?.type ?? "Human", info: infoMap.get(id) };
+  }).filter(Boolean) as Normie[];
 
-  /* ── Render ─────────────────────────────────────────────────────────── */
-  const hasNormies = normies.length > 0;
+  /* ── Registry: paginate allAgents ───────────────────────────────────── */
+  const regTotal    = allAgents.length;
+  const regShown    = Math.min(regPage * REGISTRY_PAGE, regTotal);
+  const regAgents   = allAgents.slice(0, regShown);
 
+  /* ─────────────────────────────────────────────────────────────────────
+     RENDER
+  ───────────────────────────────────────────────────────────────────── */
   return (
-    <div className="max-w-7xl mx-auto px-4 py-10 space-y-5">
+    <div className="max-w-[1400px] mx-auto px-4 py-8 space-y-5">
 
-      {/* Header */}
-      <div className="flex items-start justify-between flex-wrap gap-4">
-        <div className="space-y-1">
-          <div className="flex items-center gap-2.5">
-            <Bot className="w-5 h-5 text-cyan-500 flex-shrink-0" />
-            <h1 className="font-mono text-2xl font-medium text-n-text">archive lounge</h1>
-            {total > 0 && (
-              <span className="text-[10px] font-mono px-2 py-px border border-cyan-400/40 rounded-sm text-cyan-600 dark:text-cyan-400 tracking-wide">
-                {total} agents
-              </span>
-            )}
-          </div>
-          <p className="text-xs font-mono text-n-faint pl-7">
-            agentic normies · erc-8004 · full-body sprites via fullnormies.vercel.app
-          </p>
-        </div>
+      {/* CSS walk-frame keyframes for the sprite sheet animation */}
+      <style>{`
+        .normie-sprite {
+          position: absolute;
+          width: ${SPR_W}px;
+          height: ${SPR_H}px;
+          background-size: ${SHEET_CSS_W}px ${SPR_H}px;
+          background-repeat: no-repeat;
+          image-rendering: pixelated;
+          image-rendering: crisp-edges;
+        }
+      `}</style>
 
-        <div className="flex items-center gap-2 text-[10px] font-mono text-n-faint">
-          {loading ? (
-            <span className="flex items-center gap-1.5">
-              <Loader2 className="w-3 h-3 animate-spin text-cyan-500" /> scanning…
-            </span>
-          ) : (
-            <span className="flex items-center gap-1.5">
-              <Wifi className="w-3 h-3 text-cyan-500" />
-              {normies.length} in lounge
-              {infoLoaded < normies.length && (
-                <span className="text-n-faint"> · loading personas ({Math.min(infoLoaded, normies.length)}/{normies.length})</span>
-              )}
-            </span>
-          )}
-        </div>
+      {/* ── Header ── */}
+      <div className="flex items-center gap-3 flex-wrap">
+        <Bot className="w-4 h-4 text-cyan-500" />
+        <h1 className="font-mono text-xl font-medium text-n-text">archive lounge</h1>
+        {total > 0 && (
+          <span className="text-[10px] font-mono px-1.5 py-px border border-cyan-400/40 rounded text-cyan-600 dark:text-cyan-400">
+            {total} agents
+          </span>
+        )}
+        <span className="text-[10px] font-mono text-n-faint ml-auto">
+          {loading
+            ? <span className="flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin" /> loading agents…</span>
+            : <span className="flex items-center gap-1"><Wifi className="w-3 h-3 text-cyan-500" />{loungeIds.length} on stage · rotating every {ROTATE_MS/1000}s</span>
+          }
+        </span>
       </div>
 
-      {/* Canvas container */}
-      <div
-        ref={containerRef}
-        className="relative w-full border border-n-border rounded overflow-hidden bg-n-bg"
-        style={{ height: CANVAS_H }}
-      >
-        <canvas
-          ref={canvasRef}
-          style={{ display: "block", width: "100%", height: CANVAS_H }}
-        />
+      {/* ── Main row: stage + chat feed ── */}
+      <div className="flex gap-3 items-start">
 
-        {/* Speech bubbles — DOM overlay */}
-        <AnimatePresence>
-          {bubbles.map(bubble => {
-            const cw  = containerRef.current?.clientWidth ?? 900;
-            const bW  = 162;
-            const left = Math.max(8, Math.min(bubble.x - bW / 2, cw - bW - 8));
-            const top  = Math.max(8, bubble.y - 82);
+        {/* Stage */}
+        <div
+          ref={stageRef}
+          className="relative flex-1 border border-n-border rounded overflow-hidden bg-n-bg"
+          style={{ height: STAGE_H }}
+        >
+          {/* background canvas */}
+          <canvas ref={bgCanvasRef} className="absolute inset-0 pointer-events-none" />
+
+          {/* Sprites — DOM elements, positions set via ref in rAF */}
+          {loungeNormies.map(n => (
+            <div
+              key={`sprite-${n.tokenId}`}
+              ref={el => { if (el) spriteRefs.current.set(n.tokenId, el); else spriteRefs.current.delete(n.tokenId); }}
+              className="normie-sprite cursor-pointer"
+              style={{
+                backgroundImage: `url(${SPRITES_API}/normies/${n.tokenId}/sheet.png)`,
+                /* backgroundPositionX is updated via ref in the walk timer */
+              }}
+              title={n.info?.tagline ?? n.name}
+            />
+          ))}
+
+          {/* Name tags — separate elements so facing-flip doesn't mirror text */}
+          {loungeNormies.map(n => {
+            const typeCol = TYPE_COLOR[n.type] || "";
+            const info    = n.info;
             return (
-              <motion.div
-                key={bubble.id}
-                initial={{ opacity: 0, y: 8, scale: 0.9 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit   ={{ opacity: 0, y: -5, scale: 0.95 }}
-                transition={{ duration: 0.2, ease: "easeOut" }}
-                className="absolute pointer-events-none"
-                style={{ left, top, width: bW, zIndex: 10 }}
+              <div
+                key={`name-${n.tokenId}`}
+                ref={el => { if (el) nameRefs.current.set(n.tokenId, el); else nameRefs.current.delete(n.tokenId); }}
+                className="absolute pointer-events-none text-center"
+                style={{ width: SPR_W }}
               >
-                <div className="relative bg-n-white border border-n-border rounded shadow-sm px-2.5 py-2">
-                  <div className="text-[8px] font-mono font-bold text-cyan-600 dark:text-cyan-400 mb-1 uppercase tracking-widest leading-none">
-                    {trunc(bubble.name, 15)}
-                  </div>
-                  <p className="text-[9px] font-mono text-n-text leading-relaxed break-words">
-                    {trunc(bubble.text, 110)}
-                  </p>
-                  <div
-                    className="absolute w-2.5 h-2.5 rotate-45 bg-n-white border-r border-b border-n-border"
-                    style={{ bottom: -6, left: 12 }}
-                  />
+                <div
+                  className="text-[7px] font-mono font-medium leading-tight"
+                  style={{ color: typeCol || "rgba(72,73,75,0.55)" }}
+                >
+                  {trunc(n.name, 14)}
                 </div>
-              </motion.div>
+                {info?.canvas && (
+                  <div className="text-[6px] font-mono" style={{ color: "rgba(72,73,75,0.35)" }}>
+                    lv{info.canvas.level} · {info.canvas.actionPoints}ap
+                  </div>
+                )}
+              </div>
             );
           })}
-        </AnimatePresence>
 
-        {/* Loading state */}
-        {loading && !hasNormies && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-4">
-            <div className="grid grid-cols-4 gap-2">
-              {Array.from({ length: 8 }).map((_, i) => (
-                <motion.div
-                  key={i}
-                  className="w-8 h-14 border border-n-border rounded bg-n-surface"
-                  animate={{ opacity: [0.25, 0.7, 0.25] }}
-                  transition={{ duration: 1.4, delay: i * 0.1, repeat: Infinity }}
-                />
-              ))}
+          {/* Speech bubbles */}
+          <AnimatePresence>
+            {bubbles.map(b => {
+              const cw  = stageRef.current?.clientWidth ?? 900;
+              const bW  = 160;
+              const left = Math.max(6, Math.min(b.x - bW / 2, cw - bW - 6));
+              const top  = Math.max(6, b.y - 78);
+              return (
+                <motion.div key={b.id}
+                  initial={{ opacity: 0, y: 8, scale: 0.88 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit   ={{ opacity: 0, y: -5, scale: 0.93 }}
+                  transition={{ duration: 0.18, ease: "easeOut" }}
+                  className="absolute pointer-events-none"
+                  style={{ left, top, width: bW, zIndex: 9999 }}
+                >
+                  <div className="bg-n-white border border-n-border rounded shadow-sm px-2.5 py-2 relative">
+                    <div className="text-[7px] font-mono font-bold text-cyan-600 dark:text-cyan-400 mb-1 uppercase tracking-widest leading-none">
+                      {trunc(b.name, 14)}
+                    </div>
+                    <p className="text-[8.5px] font-mono text-n-text leading-relaxed break-words">
+                      {trunc(b.text, 100)}
+                    </p>
+                    <div className="absolute w-2.5 h-2.5 rotate-45 bg-n-white border-r border-b border-n-border" style={{ bottom: -6, left: 12 }} />
+                  </div>
+                </motion.div>
+              );
+            })}
+          </AnimatePresence>
+
+          {/* Loading overlay */}
+          {loading && !loungeIds.length && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-4">
+              <div className="grid grid-cols-4 gap-2">
+                {Array.from({ length: 8 }).map((_, i) => (
+                  <motion.div key={i} className="w-8 h-12 border border-n-border rounded bg-n-surface"
+                    animate={{ opacity: [0.2, 0.7, 0.2] }}
+                    transition={{ duration: 1.4, delay: i * 0.1, repeat: Infinity }} />
+                ))}
+              </div>
+              <p className="text-xs font-mono text-n-muted">summoning agentic normies…</p>
             </div>
-            <p className="text-xs font-mono text-n-muted">summoning agentic normies…</p>
-          </div>
-        )}
+          )}
+        </div>
 
-        {/* Empty */}
-        {!loading && !hasNormies && (
-          <div className="absolute inset-0 flex items-center justify-center">
-            <p className="text-xs font-mono text-n-faint">no agentic normies registered yet</p>
+        {/* Chat feed sidebar */}
+        <div className="w-56 flex-shrink-0 border border-n-border rounded bg-n-bg overflow-hidden flex flex-col" style={{ height: STAGE_H }}>
+          <div className="px-3 py-2 border-b border-n-border flex items-center gap-1.5 flex-shrink-0">
+            <MessageSquare className="w-3 h-3 text-n-muted" />
+            <span className="text-[10px] font-mono text-n-muted uppercase tracking-wider">live conversations</span>
           </div>
-        )}
+          <div className="flex-1 overflow-y-auto divide-y divide-n-border">
+            {chatLog.length === 0 && !loading && (
+              <p className="text-[9px] font-mono text-n-faint p-3">waiting for conversations…</p>
+            )}
+            {chatLog.map(entry => (
+              <div key={entry.id} className="px-3 py-2 space-y-1">
+                <div className="flex items-center gap-1 flex-wrap">
+                  <span className="text-[8px] font-mono font-bold text-cyan-600 dark:text-cyan-400 uppercase leading-none">
+                    {trunc(entry.aName, 10)}
+                  </span>
+                  <span className="text-[7px] font-mono text-n-faint">→</span>
+                  <span className="text-[8px] font-mono font-bold text-n-muted uppercase leading-none">
+                    {trunc(entry.bName, 10)}
+                  </span>
+                </div>
+                <p className="text-[8px] font-mono text-n-muted leading-snug italic">
+                  &ldquo;{trunc(entry.text, 80)}&rdquo;
+                </p>
+                <div className="text-[7px] font-mono text-n-faint">{timeAgo(entry.ts)}</div>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
 
-      {/* Legend */}
-      <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 text-[10px] font-mono text-n-faint">
-        <span className="flex items-center gap-1.5">
-          <span className="w-2 h-2 rounded-full bg-cyan-500/80 inline-block" /> talking
-        </span>
-        <span className="flex items-center gap-1.5">
-          <span className="w-2 h-2 rounded-full border border-n-border inline-block" /> idle
-        </span>
-        <span className="ml-auto">
-          sprites ·{" "}
-          <a href="https://fullnormies.vercel.app" target="_blank" rel="noopener noreferrer"
-             className="underline underline-offset-2 hover:text-n-muted transition-colors">
-            fullnormies.vercel.app
-          </a>
-          {" · "}personas ·{" "}
-          <a href="https://api.normies.art" target="_blank" rel="noopener noreferrer"
-             className="underline underline-offset-2 hover:text-n-muted transition-colors">
-            api.normies.art
-          </a>
-          {" · "}erc-8004
-        </span>
+      {/* ── Legend ── */}
+      <div className="flex items-center gap-4 text-[9px] font-mono text-n-faint flex-wrap">
+        <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" /> alien — slow</span>
+        <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-violet-500 inline-block" /> agent — methodical</span>
+        <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-orange-400 inline-block" /> cat — erratic</span>
+        <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-n-muted inline-block" /> human — normal</span>
+        <span className="ml-auto">sprites · <a href="https://fullnormies.vercel.app" target="_blank" rel="noopener noreferrer" className="underline underline-offset-2 hover:text-n-muted">fullnormies.vercel.app</a> · personas · <a href="https://api.normies.art" target="_blank" rel="noopener noreferrer" className="underline underline-offset-2 hover:text-n-muted">api.normies.art</a> · erc-8004</span>
       </div>
+
+      {/* ── Agent Registry ── */}
+      {allAgents.length > 0 && (
+        <section className="space-y-3 border-t border-n-border pt-6">
+          <div className="flex items-center gap-2">
+            <Users className="w-3.5 h-3.5 text-n-muted" />
+            <h2 className="text-xs font-mono text-n-muted uppercase tracking-wider">
+              agent registry
+            </h2>
+            <span className="text-[10px] font-mono text-n-faint">
+              {regShown} of {regTotal} shown
+              {infoProgress < regTotal && ` · loading personas ${infoProgress}/${regTotal}`}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-8 sm:grid-cols-12 md:grid-cols-16 lg:grid-cols-20 gap-1.5">
+            {regAgents.map(a => {
+              const tid     = Number(a.tokenId);
+              const onStage = loungeIds.includes(tid);
+              const info    = infoMap.get(tid);
+              return (
+                <button
+                  key={tid}
+                  onClick={() => bringToStage(tid, a.type, true)}
+                  title={`${info?.name ?? a.name}${info?.tagline ? ` · "${info.tagline}"` : ""}${onStage ? " (on stage)" : ""}`}
+                  className={`relative flex flex-col items-center gap-0.5 p-1 rounded border transition-colors ${
+                    onStage
+                      ? "border-cyan-400/60 bg-cyan-50/50 dark:bg-cyan-900/20"
+                      : "border-n-border hover:border-n-muted hover:bg-n-surface"
+                  }`}
+                >
+                  {/* face SVG */}
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={`${AGENTS_API}/normie/${tid}/image.svg`}
+                    alt={a.name}
+                    loading="lazy"
+                    width={32} height={32}
+                    className="pixelated w-8 h-8 object-contain"
+                    style={{ filter: dark ? "invert(1)" : "none" }}
+                  />
+                  <span className="text-[6px] font-mono text-n-faint leading-tight text-center truncate w-full">
+                    {trunc(info?.name ?? a.name, 9)}
+                  </span>
+                  {/* type dot */}
+                  {a.type !== "Human" && (
+                    <span
+                      className="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full"
+                      style={{ background: TYPE_COLOR[a.type] || "" }}
+                    />
+                  )}
+                  {/* on-stage indicator */}
+                  {onStage && (
+                    <span className="absolute bottom-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-cyan-500" />
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Load more */}
+          {regShown < regTotal && (
+            <button
+              onClick={() => setRegPage(p => p + 1)}
+              className="flex items-center gap-1.5 text-[10px] font-mono text-n-muted hover:text-n-text border border-n-border rounded px-3 py-1.5 transition-colors mx-auto"
+            >
+              show more <span className="text-n-faint">({regTotal - regShown} remaining)</span>
+            </button>
+          )}
+        </section>
+      )}
     </div>
   );
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
-   ROOT EXPORT — handles passcode gate
+   ROOT — passcode gate
 ══════════════════════════════════════════════════════════════════════════ */
 export default function ArchiveLoungeClient() {
   const [unlocked, setUnlocked] = useState(false);
   const [checked,  setChecked]  = useState(false);
 
-  /* read localStorage only on client */
   useEffect(() => {
     setUnlocked(localStorage.getItem(LS_KEY) === "1");
     setChecked(true);
   }, []);
 
-  const handleUnlock = useCallback(() => {
+  const unlock = useCallback(() => {
     localStorage.setItem(LS_KEY, "1");
     setUnlocked(true);
   }, []);
 
-  if (!checked) return null; // avoid SSR/hydration mismatch
-
-  if (!unlocked) {
-    return (
-      <div className="max-w-7xl mx-auto px-4 py-10">
-        <LockScreen onUnlock={handleUnlock} />
-      </div>
-    );
-  }
-
+  if (!checked) return null;
+  if (!unlocked) return (
+    <div className="max-w-7xl mx-auto px-4 py-10">
+      <LockScreen onUnlock={unlock} />
+    </div>
+  );
   return <LoungeRoom />;
 }
