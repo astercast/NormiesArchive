@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { Loader2, Zap } from "lucide-react";
+import { Loader2, Zap, Bot } from "lucide-react";
 
 interface NormieEntry {
   tokenId:   number;
@@ -52,11 +52,25 @@ function EditCountBadge({ count }: { count: number }) {
   );
 }
 
+function AgenticBadge() {
+  return (
+    <span
+      className="absolute bottom-0.5 left-0.5 flex items-center justify-center w-3.5 h-3.5 rounded bg-cyan-500/90 text-white"
+      title="Agentic — ERC-8004 registered"
+    >
+      <Bot className="w-2 h-2" />
+    </span>
+  );
+}
+
+const AGENT_BASE = "https://api.normies.art";
+
 export default function ExploreGrid() {
   const [normies,    setNormies]  = useState<NormieEntry[]>([]);
   const [loading,    setLoading]  = useState(true);
   const [scannedAt,  setScanned]  = useState<number | null>(null);
   const [latestBlock, setBlock]   = useState<number | null>(null);
+  const [agenticIds, setAgenticIds] = useState<Set<number>>(new Set());
 
   useEffect(() => {
     // Add cache-bust so we always get a fresh response after redeployment
@@ -84,6 +98,22 @@ export default function ExploreGrid() {
         if (d.scannedAt)   setScanned(d.scannedAt);
         if (d.latestBlock) setBlock(d.latestBlock);
         setLoading(false);
+
+        // Batch-check agent bindings for all entries in the grid
+        if (sorted.length > 0) {
+          const tokenIds = sorted.map(n => String(n.tokenId));
+          fetch(`${AGENT_BASE}/agents/binding/batch`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ tokenIds }),
+          })
+            .then(r => r.ok ? r.json() : null)
+            .then(data => {
+              if (!data?.bindings) return;
+              setAgenticIds(new Set(Object.keys(data.bindings).map(Number)));
+            })
+            .catch(() => {});
+        }
       })
       .catch(() => setLoading(false));
   }, []);
@@ -119,26 +149,33 @@ export default function ExploreGrid() {
       ) : (
         <>
           <div className="grid grid-cols-5 sm:grid-cols-7 md:grid-cols-10 gap-1.5">
-            {normies.map(({ tokenId, level, type, editCount }) => (
-              <Link
-                key={tokenId}
-                href={`/normie/${tokenId}`}
-                title={`Normie #${tokenId} · Level ${level} ${type} · ${editCount} edit${editCount !== 1 ? "s" : ""}`}
-                className="relative aspect-square border border-n-border rounded overflow-hidden hover:border-n-text transition-colors group bg-n-bg"
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={`${BASE}/normie/${tokenId}/image.svg`}
-                  alt={`#${tokenId}`}
-                  className="w-full h-full object-contain pixelated group-hover:scale-110 transition-transform duration-200"
-                  loading="lazy"
-                />
-                <TypeBadge type={type} />
-                <LevelBadge level={level} />
-                <EditCountBadge count={editCount} />
-              </Link>
-            ))}
+            {normies.map(({ tokenId, level, type, editCount }) => {
+              const isAgentic = agenticIds.has(tokenId);
+              return (
+                <Link
+                  key={tokenId}
+                  href={`/normie/${tokenId}`}
+                  title={`Normie #${tokenId} · Level ${level} ${type} · ${editCount} edit${editCount !== 1 ? "s" : ""}${isAgentic ? " · Agentic" : ""}`}
+                  className={`relative aspect-square border rounded overflow-hidden hover:border-n-text transition-colors group bg-n-bg ${
+                    isAgentic ? "border-cyan-400/60 hover:border-cyan-400" : "border-n-border"
+                  }`}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={`${BASE}/normie/${tokenId}/image.svg`}
+                    alt={`#${tokenId}`}
+                    className="w-full h-full object-contain pixelated group-hover:scale-110 transition-transform duration-200"
+                    loading="lazy"
+                  />
+                  <TypeBadge type={type} />
+                  <LevelBadge level={level} />
+                  <EditCountBadge count={editCount} />
+                  {isAgentic && <AgenticBadge />}
+                </Link>
+              );
+            })}
           </div>
+
           <p className="text-xs font-mono text-n-faint text-center">
             {normies.length} normie{normies.length !== 1 ? "s" : ""} transformed out of 10,000 ·{" "}
             click any to explore its full on-chain history

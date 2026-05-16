@@ -7,7 +7,7 @@ import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import {
   ArrowLeft, ArrowRight, Download, Share2,
-  Eye, EyeOff, Play, Pause, ExternalLink, Volume2, VolumeX, Loader2, AlertCircle, Wallet
+  Eye, EyeOff, Play, Pause, ExternalLink, Volume2, VolumeX, Loader2, AlertCircle, Wallet, Bot
 } from "lucide-react";
 import { useNormieHistory } from "@/hooks/useNormieHistory";
 import NormieGrid from "@/components/NormieGrid";
@@ -19,6 +19,9 @@ import {
   playPixelBirth, playPixelDeath, playLevelUp,
   playScrubTick, setSoundEnabled
 } from "@/lib/sound";
+import AgentSection, { type AgentInfo } from "@/components/AgentSection";
+
+const AGENT_BASE = "https://api.normies.art";
 
 interface Props { tokenId: number }
 const SCALE = 10;
@@ -34,6 +37,21 @@ export default function NormieDetailClient({ tokenId }: Props) {
     queryKey: ["normie-owner", tokenId],
     queryFn: () => fetch(`/api/normie/${tokenId}/owner`).then(r => r.json()),
     staleTime: 30_000,
+  });
+
+  const { data: bindingData } = useQuery<{ binding: { agentId: string } | null }>({
+    queryKey: ["agent-binding", tokenId],
+    queryFn: () => fetch(`${AGENT_BASE}/agents/binding/${tokenId}`).then(r => r.json()),
+    staleTime: 120_000,
+  });
+
+  const isAgentic = bindingData?.binding != null;
+
+  const { data: agentInfo } = useQuery<AgentInfo>({
+    queryKey: ["agent-info", tokenId],
+    queryFn: () => fetch(`${AGENT_BASE}/agents/info/${tokenId}`).then(r => r.json()),
+    enabled: isAgentic,
+    staleTime: 120_000,
   });
 
   const [step,           setStep]           = useState(0);
@@ -249,6 +267,15 @@ export default function NormieDetailClient({ tokenId }: Props) {
         {isInThe100 && (
           <span className="inline-flex items-center gap-1 text-[10px] font-mono font-bold px-2 py-px rounded border border-red-400 bg-red-50 text-red-600" title={`#${the100Rank} earliest editor`}>
             THE100{the100Rank && the100Rank <= 3 ? ` #${the100Rank}` : ""}
+          </span>
+        )}
+        {isAgentic && (
+          <span
+            className="inline-flex items-center gap-1 text-[10px] font-mono font-bold px-2 py-px rounded border border-cyan-400 bg-cyan-50 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-300"
+            title="Registered ERC-8004 agent"
+          >
+            <Bot className="w-2.5 h-2.5" />
+            {agentInfo?.name ?? "AGENTIC"}
           </span>
         )}
         {listing && (
@@ -557,6 +584,11 @@ export default function NormieDetailClient({ tokenId }: Props) {
           )}
         </div>
       </div>
+
+      {/* Agent Section */}
+      {isAgentic && agentInfo && (
+        <AgentSection info={agentInfo} tokenId={tokenId} />
+      )}
 
       {/* Life Story */}
       {lifeStory.length > 0 && lifeStory[0] !== `Normie #${tokenId} has never been touched. An untouched original, pristine from the mint.` && (

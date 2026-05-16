@@ -6,12 +6,13 @@ import { useState, useEffect } from "react";
 import { Search, Menu, X, Sun, Moon } from "lucide-react";
 
 const LINKS = [
-  { href: "/",             label: "home" },
-  { href: "/leaderboard",  label: "leaderboard" },
-  { href: "/the-100",      label: "the 100" },
-  { href: "/latest",       label: "latest works" },
-  { href: "/wallet",       label: "wallet" },
-  { href: "/how-it-works", label: "how it works" },
+  { href: "/",               label: "home" },
+  { href: "/leaderboard",    label: "leaderboard" },
+  { href: "/the-100",        label: "the 100" },
+  { href: "/latest",         label: "latest works" },
+  { href: "/wallet",         label: "wallet" },
+  { href: "/archive-lounge", label: "archive lounge" },
+  { href: "/how-it-works",   label: "how it works" },
 ];
 
 export default function Nav() {
