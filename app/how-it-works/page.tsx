@@ -68,13 +68,10 @@ export default function HowItWorksPage() {
       {/* CANVAS */}
       <Section label="part 2" title="normiescanvas">
         <p className="text-sm font-mono text-n-muted leading-relaxed">
-          NormiesCanvas lets owners edit a normie&apos;s pixels. edits are applied as a <strong className="text-n-text">transform layer</strong> — an XOR mask stored on-chain alongside the original image.
+          NormiesCanvas lets owners edit a normie&apos;s pixels. edits are stored on-chain as a <strong className="text-n-text">transform layer</strong> that flips pixels on top of the original.
         </p>
-        <div className="border border-n-border rounded px-4 py-3 bg-n-surface font-mono text-sm text-center text-n-text">
-          original XOR transform_layer
-        </div>
         <p className="text-sm font-mono text-n-muted leading-relaxed">
-          the original normie is never destroyed; the transform layer simply flips pixels on top of it. edit at{' '}
+          the original normie is never destroyed — both the original and the transform are kept on-chain. edit at{' '}
           <a href="https://www.normies.art/lab" target="_blank" rel="noopener noreferrer"
              className="text-n-text underline underline-offset-2 hover:opacity-70 transition-opacity">normies.art/lab</a>.
         </p>
@@ -86,13 +83,10 @@ export default function HowItWorksPage() {
           editing pixels costs <strong className="text-n-text">Action Points (AP)</strong>. AP is earned by burning other normies into a target normie. the burned normie is destroyed permanently.
         </p>
         <div className="space-y-3">
-          <Step n={1} title="burn a normie">the burned normie&apos;s pixel count determines how much AP it gives. denser normies give more AP.</Step>
+          <Step n={1} title="burn a normie">each burn grants AP to the target normie. the burned normie is gone permanently.</Step>
           <Step n={2} title="commit → reveal">burning uses a two-step commit-reveal on-chain flow to prevent front-running.</Step>
           <Step n={3} title="spend AP to edit">with AP on your normie, you can flip pixels by updating the transform layer.</Step>
         </div>
-        <Callout>
-          the AP shown here is a <strong className="text-n-text">lifetime edit score</strong> — total pixels ever flipped, not remaining budget.
-        </Callout>
       </Section>
 
       {/* LEVELS */}
@@ -117,7 +111,7 @@ export default function HowItWorksPage() {
           <Step n={1} title="data source">all pixel state, edit history, and canvas data comes from the Normies Ponder API (<code className="bg-n-surface px-1 rounded">api.normies.art</code>).</Step>
           <Step n={2} title="cron cache">leaderboard data is refreshed every 10 minutes by GitHub Actions and cached in Vercel Blob.</Step>
           <Step n={3} title="timeline animation">the archive reconstructs each normie&apos;s history to show edits over time.</Step>
-          <Step n={4} title="leaderboard &amp; the 100">the leaderboard ranks edited normies by AP, and the 100 page shows the first 100 edited normies.</Step>
+          <Step n={4} title="leaderboard &amp; the 100">the leaderboard ranks normies by level, edit count, and pixel count. the 100 page shows the first 100 normies ever edited.</Step>
           <Step n={5} title="wallet search">look up any address or ENS name to see owned normies and recent activity.</Step>
         </div>
         <Callout>
