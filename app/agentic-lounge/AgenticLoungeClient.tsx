@@ -1092,7 +1092,7 @@ function LoungeRoom() {
                     backgroundImage: `url(${SPRITES_API}/normies/${n.tokenId}/sheet.png)`,
                   }}
                   onClick={() => {
-                    setFocusId(n.tokenId);
+                    bringToStage(n.tokenId, { openSheet: true });
                     setTraitsOpen(true);
                   }}
                   title={n.info?.tagline?.trim() ? `"${n.info.tagline}"` : n.name}
@@ -1144,19 +1144,19 @@ function LoungeRoom() {
               <AnimatePresence>
                 {bubbles.map(b => {
                   const cw = stageRef.current?.clientWidth ?? 360;
-                  const bw = Math.min(124, cw - 12);
+                  const bw = Math.min(88, cw - 16);
                   const left = Math.max(
-                    6,
-                    Math.min(b.x - bw / 2, cw - bw - 6)
+                    4,
+                    Math.min(b.x - bw / 2, cw - bw - 4)
                   );
-                  const top = Math.max(4, b.y - (b.solo ? 42 : 52));
+                  const top = Math.max(2, b.y - (b.solo ? 34 : 42));
                   return (
                     <motion.div
                       key={b.id}
-                      initial={{ opacity: 0, y: 4, scale: 0.96 }}
+                      initial={{ opacity: 0, y: 3, scale: 0.98 }}
                       animate={{ opacity: 1, y: 0, scale: 1 }}
-                      exit={{ opacity: 0, y: -3, scale: 0.97 }}
-                      transition={{ duration: 0.14 }}
+                      exit={{ opacity: 0, y: -2, scale: 0.99 }}
+                      transition={{ duration: 0.12 }}
                       className="absolute pointer-events-none"
                       style={{
                         left,
@@ -1166,22 +1166,20 @@ function LoungeRoom() {
                       }}
                     >
                       <div
-                        className={`rounded border px-1.5 py-1 shadow-sm ${
+                        className={`rounded-md border px-1 py-0.5 shadow-md ${
                           b.solo
-                            ? "border-dashed border-cyan-600/50 dark:border-cyan-500/45 bg-n-white dark:bg-n-surface"
-                            : "border-n-border bg-n-white dark:bg-n-surface"
-                        }`}
+                            ? "border-dashed border-[var(--border)]"
+                            : "border-[var(--border)]"
+                        } bg-[var(--white)]`}
                       >
-                        <div className="text-[6px] font-mono font-semibold text-cyan-600 dark:text-cyan-400 uppercase tracking-wide mb-px leading-none">
-                          {trunc(b.name, 14)}
-                          {b.solo && (
-                            <span className="text-n-muted font-normal normal-case ml-0.5">
-                              thought
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-[7px] font-mono text-n-text leading-snug break-words">
-                          {trunc(b.text, b.solo ? 64 : 88)}
+                        <p className="font-mono text-[6px] text-[var(--muted)] leading-tight mb-0.5">
+                          <span className="text-[var(--text)]">{trunc(b.name, 11)}</span>
+                          {b.solo ? (
+                            <span className="text-[var(--faint)]"> · musing</span>
+                          ) : null}
+                        </p>
+                        <p className="font-body text-[8px] text-[var(--text)] leading-snug line-clamp-3 break-words">
+                          {b.text}
                         </p>
                       </div>
                     </motion.div>
@@ -1274,10 +1272,21 @@ function LoungeRoom() {
               initial={{ opacity: 0, y: 14 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 10 }}
-              className="fixed inset-x-0 bottom-0 z-50 sm:relative sm:inset-auto sm:bottom-auto sm:mt-2"
+              className="fixed inset-x-0 bottom-0 z-50 bg-[var(--bg)] sm:relative sm:inset-auto sm:bottom-auto sm:mt-2 sm:bg-transparent"
             >
               <div className="mx-auto max-w-[1400px] px-3 sm:px-0 pb-[max(1rem,env(safe-area-inset-bottom))] sm:pb-0">
-                <div className="rounded-t-2xl sm:rounded-xl border border-n-border bg-n-bg shadow-2xl sm:shadow-md p-4 space-y-3 sm:max-w-xl">
+                <div
+                  onClick={() => {
+                    if (focusId == null) return;
+                    if (agents.some(a => Number(a.tokenId) === focusId)) {
+                      bringToStage(focusId, {
+                        fromEdge: true,
+                        openSheet: true,
+                      });
+                    }
+                  }}
+                  className="rounded-t-2xl sm:rounded-xl border border-[var(--border)] bg-[var(--white)] shadow-xl sm:shadow-md p-4 space-y-3 sm:max-w-xl cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-cyan-500/60"
+                >
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex gap-3 min-w-0">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -1286,15 +1295,15 @@ function LoungeRoom() {
                         alt=""
                         width={56}
                         height={56}
-                        className="w-12 h-12 sm:w-14 sm:h-14 object-contain pixelated shrink-0 rounded-md border border-n-border bg-n-surface p-1"
+                        className="w-12 h-12 sm:w-14 sm:h-14 object-contain pixelated shrink-0 rounded-md border border-[var(--border)] bg-[var(--surface)] p-1"
                         style={{ filter: dark ? "invert(1)" : "none" }}
                       />
                       <div className="min-w-0">
-                        <h2 className="font-mono text-sm sm:text-base font-medium text-n-text truncate">
+                        <h2 className="font-mono text-sm sm:text-base font-medium text-[var(--text)] truncate">
                           {focusInfo?.name ?? focusAgent?.name ?? `#${focusId}`}
                         </h2>
                         {focusInfo?.tagline && (
-                          <p className="text-[11px] font-mono text-n-muted italic line-clamp-2">
+                          <p className="text-[11px] font-mono text-[var(--muted)] italic line-clamp-2">
                             &ldquo;{focusInfo.tagline}&rdquo;
                           </p>
                         )}
@@ -1302,8 +1311,11 @@ function LoungeRoom() {
                     </div>
                     <button
                       type="button"
-                      onClick={() => setFocusId(null)}
-                      className="text-[10px] font-mono text-n-faint hover:text-n-text px-2 py-1 min-h-[44px] sm:min-h-0"
+                      onClick={e => {
+                        e.stopPropagation();
+                        setFocusId(null);
+                      }}
+                      className="text-[10px] font-mono text-[var(--faint)] hover:text-[var(--text)] px-2 py-1 min-h-[44px] sm:min-h-0"
                     >
                       close
                     </button>
@@ -1313,28 +1325,34 @@ function LoungeRoom() {
                     agents.some(a => Number(a.tokenId) === focusId) && (
                       <button
                         type="button"
-                        onClick={() =>
+                        onClick={e => {
+                          e.stopPropagation();
                           bringToStage(focusId, {
                             fromEdge: true,
                             openSheet: true,
-                          })
-                        }
+                          });
+                        }}
                         className="w-full sm:w-auto inline-flex items-center justify-center min-h-[40px] px-4 text-[11px] font-mono rounded-md bg-cyan-600 text-white hover:bg-cyan-500 dark:bg-cyan-700 dark:hover:bg-cyan-600"
                       >
                         Put on floor
                       </button>
                     )}
                   {focusInfo?.greeting && (
-                    <p className="text-[11px] font-mono text-n-text leading-relaxed">
+                    <p
+                      className="text-[11px] font-mono text-[var(--text)] leading-relaxed pointer-events-none"
+                    >
                       {focusInfo.greeting}
                     </p>
                   )}
                   {(focusInfo?.personalityTraits?.length ||
                     focusInfo?.quirks?.length) && (
-                    <div>
+                    <div className="pointer-events-auto">
                       <button
                         type="button"
-                        onClick={() => setTraitsOpen(o => !o)}
+                        onClick={e => {
+                          e.stopPropagation();
+                          setTraitsOpen(o => !o);
+                        }}
                         className="flex items-center gap-1 text-[10px] font-mono text-cyan-600 dark:text-cyan-400 uppercase tracking-wider mb-2 min-h-[40px] sm:min-h-0"
                       >
                         published traits
@@ -1349,7 +1367,7 @@ function LoungeRoom() {
                           {focusInfo.personalityTraits?.map((t, i) => (
                             <span
                               key={`t-${focusId}-${i}`}
-                              className="text-[9px] font-mono px-2 py-0.5 rounded-full border border-n-border text-n-muted"
+                              className="text-[9px] font-mono px-2 py-0.5 rounded-full border border-[var(--border)] text-[var(--muted)]"
                             >
                               {t}
                             </span>
@@ -1357,7 +1375,7 @@ function LoungeRoom() {
                           {focusInfo.quirks?.map((q, i) => (
                             <span
                               key={`q-${focusId}-${i}`}
-                              className="text-[9px] font-mono px-2 py-0.5 rounded-full border border-dashed border-n-border text-n-faint"
+                              className="text-[9px] font-mono px-2 py-0.5 rounded-full border border-dashed border-[var(--border)] text-[var(--faint)]"
                             >
                               {q}
                             </span>
@@ -1366,10 +1384,13 @@ function LoungeRoom() {
                       )}
                     </div>
                   )}
-                  <div className="flex flex-wrap gap-2 pt-1">
+                  <div
+                    className="flex flex-wrap gap-2 pt-1 pointer-events-auto"
+                    onClick={e => e.stopPropagation()}
+                  >
                     <Link
                       href={`/normie/${focusId}`}
-                      className="inline-flex items-center justify-center min-h-[44px] sm:min-h-[36px] px-4 text-[11px] font-mono rounded-md bg-n-text text-n-bg hover:opacity-90"
+                      className="inline-flex items-center justify-center min-h-[44px] sm:min-h-[36px] px-4 text-[11px] font-mono rounded-md bg-[var(--text)] text-[var(--bg)] hover:opacity-90"
                     >
                       open normie page
                     </Link>
@@ -1377,7 +1398,7 @@ function LoungeRoom() {
                       href={`${AGENTS_API}/agents/info/${focusId}`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex items-center justify-center min-h-[44px] sm:min-h-[36px] px-4 text-[11px] font-mono rounded-md border border-n-border text-n-muted hover:border-n-text"
+                      className="inline-flex items-center justify-center min-h-[44px] sm:min-h-[36px] px-4 text-[11px] font-mono rounded-md border border-[var(--border)] text-[var(--muted)] hover:border-[var(--text)]"
                     >
                       raw persona JSON
                     </a>
