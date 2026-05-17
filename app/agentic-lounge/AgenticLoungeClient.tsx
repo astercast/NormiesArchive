@@ -3,7 +3,8 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
-  Loader2, Bot, Wifi, Lock, MessageSquare, Users, ChevronDown, ChevronUp,
+  Loader2, Bot, Lock, MessageSquare, Users, ChevronDown, ChevronUp, Search,
+  RefreshCw,
 } from "lucide-react";
 import Link from "next/link";
 import type { AgentInfo } from "@/components/AgentSection";
@@ -343,10 +344,10 @@ function LoungeRoom() {
   const [loungeIds, setLoungeIds] = useState<number[]>([]);
   const [bubbles, setBubbles] = useState<Bubble[]>([]);
   const [chatLog, setChatLog] = useState<ChatEntry[]>([]);
-  const [totalListed, setTotalListed] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [filterNote, setFilterNote] = useState<string | null>(null);
   const [dark, setDark] = useState(false);
+  const [agentQuery, setAgentQuery] = useState("");
+  const [secToShuffle, setSecToShuffle] = useState(Math.ceil(ROTATE_MS / 1000));
   const [regPage, setRegPage] = useState(1);
   const [infoProgress, setInfoProgress] = useState(0);
   const [focusId, setFocusId] = useState<number | null>(null);
@@ -375,6 +376,7 @@ function LoungeRoom() {
   const walkFrames = useRef<Map<number, number>>(new Map());
   const soloLast = useRef<Map<number, number>>(new Map());
   const pairSalt = useRef(0);
+  const nextShuffleAt = useRef(Date.now() + ROTATE_MS);
 
   useEffect(() => {
     loungeRef.current = loungeIds;
@@ -441,23 +443,33 @@ function LoungeRoom() {
     }
   }, [loungeIds]);
 
-  const bringToStage = useCallback((tokenId: number, fromEdge = true) => {
-    setFocusId(tokenId);
-    setLoungeIds(prev => {
-      if (prev.includes(tokenId)) return prev;
-      const cw = stageRef.current?.clientWidth ?? 360;
-      const sh = stageHRef.current;
-      const inf = infoRef.current.get(tokenId);
-      bodies.current.set(tokenId, mkBody(cw, sh, inf, fromEdge));
-      walkFrames.current.set(tokenId, 0);
-      const cap = capRef.current;
-      if (prev.length < cap) return [...prev, tokenId];
-      const removable = prev.filter(id => bodies.current.get(id)?.state !== "talk");
-      if (!removable.length) return prev;
-      const rm = removable[Math.floor(Math.random() * removable.length)];
-      return [...prev.filter(id => id !== rm), tokenId];
-    });
-  }, []);
+  const bringToStage = useCallback(
+    (
+      tokenId: number,
+      opts?: { fromEdge?: boolean; openSheet?: boolean }
+    ) => {
+      const fromEdge = opts?.fromEdge ?? true;
+      const openSheet = opts?.openSheet ?? true;
+      if (openSheet) setFocusId(tokenId);
+      setLoungeIds(prev => {
+        if (prev.includes(tokenId)) return prev;
+        const cw = stageRef.current?.clientWidth ?? 360;
+        const sh = stageHRef.current;
+        const inf = infoRef.current.get(tokenId);
+        bodies.current.set(tokenId, mkBody(cw, sh, inf, fromEdge));
+        walkFrames.current.set(tokenId, 0);
+        const cap = capRef.current;
+        if (prev.length < cap) return [...prev, tokenId];
+        const removable = prev.filter(
+          id => bodies.current.get(id)?.state !== "talk"
+        );
+        if (!removable.length) return prev;
+        const rm = removable[Math.floor(Math.random() * removable.length)];
+        return [...prev.filter(id => id !== rm), tokenId];
+      });
+    },
+    []
+  );
 
   /* Fetch list → binding batch → only registered agentic */
   useEffect(() => {
@@ -465,11 +477,6 @@ function LoungeRoom() {
     (async () => {
       setLoading(true);
       try {
-        const cntData = await fetch(`${AGENTS_API}/agents/count`)
-          .then(r => r.json())
-          .catch(() => null);
-        if (!cancelled && cntData) setTotalListed(cntData.count ?? 0);
-
         let cursor: string | null = null;
         let hasMore = true;
         const raw: AgentItem[] = [];
@@ -507,15 +514,11 @@ function LoungeRoom() {
 
         const verified = raw.filter(a => bound.has(Number(a.tokenId)));
         if (!cancelled) {
-          setFilterNote(
-            verified.length < raw.length
-              ? `Showing ${verified.length} with active on-chain agent bindings (${raw.length - verified.length} skipped).`
-              : null
-          );
           setAgents(verified);
           setLoading(false);
         }
 
+        nextShuffleAt.current = Date.now() + ROTATE_MS;
         const cap  = capRef.current;
         const sh   = stageHRef.current;
         const cw   = stageRef.current?.clientWidth ?? 360;
@@ -563,6 +566,7 @@ function LoungeRoom() {
 
   useEffect(() => {
     const t = setInterval(() => {
+      nextShuffleAt.current = Date.now() + ROTATE_MS;
       const pool = agentsRef.current;
       if (!pool.length) return;
       setLoungeIds(prev => {
@@ -596,6 +600,20 @@ function LoungeRoom() {
       });
     }, ROTATE_MS);
     return () => clearInterval(t);
+  }, []);
+
+  /* Shuffle countdown for the UI (synced when `nextShuffleAt` resets) */
+  useEffect(() => {
+    const tick = () => {
+      const s = Math.max(
+        0,
+        Math.ceil((nextShuffleAt.current - Date.now()) / 1000)
+      );
+      setSecToShuffle(s);
+    };
+    tick();
+    const id = setInterval(tick, 400);
+    return () => clearInterval(id);
   }, []);
 
   useEffect(() => {
@@ -899,6 +917,20 @@ function LoungeRoom() {
     [loungeIds, agentsByToken, infoMap]
   );
 
+  const searchHits = useMemo(() => {
+    const rawQ = agentQuery.trim().toLowerCase().replace(/^#/, "");
+    if (rawQ.length < 1) return [] as AgentItem[];
+    return agents
+      .filter(a => {
+        const tid = String(a.tokenId);
+        const displayName = (
+          infoMap.get(Number(a.tokenId))?.name ?? a.name
+        ).toLowerCase();
+        return displayName.includes(rawQ) || tid.includes(rawQ);
+      })
+      .slice(0, 10);
+  }, [agents, agentQuery, infoMap]);
+
   const regTotal = agents.length;
   const regShown = Math.min(regPage * REG_PAGE_SIZE, regTotal);
   const regSlice = agents.slice(0, regShown);
@@ -920,9 +952,9 @@ function LoungeRoom() {
 
       <div className="max-w-[1400px] mx-auto px-3 sm:px-4 lg:px-6 py-5 sm:py-8 space-y-5 sm:space-y-6">
         {/* Hero header */}
-        <header className="space-y-3">
-          <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
-            <div className="space-y-1">
+        <header className="space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+            <div className="space-y-2 max-w-xl">
               <div className="flex items-center gap-2 flex-wrap">
                 <h1 className="font-mono text-lg sm:text-2xl font-medium text-n-text tracking-tight">
                   agentic lounge
@@ -931,35 +963,104 @@ function LoungeRoom() {
                   ERC-8004
                 </span>
               </div>
-              <p className="text-[11px] sm:text-xs font-mono text-n-muted max-w-2xl leading-relaxed">
-                On-chain bindings only. Motion and speech use published persona
-                fields — nothing invented.
+              <p className="text-[11px] sm:text-xs font-mono text-n-muted leading-relaxed">
+                Sprites wander until they meet — then both speak using lines from
+                their public personas. The floor auto-shuffles on a timer, or pick
+                someone yourself below.
               </p>
             </div>
-            <div className="flex flex-wrap items-center gap-2 sm:justify-end text-[10px] font-mono">
-              {totalListed > 0 && (
-                <span className="px-2 py-1 rounded border border-n-border text-n-muted">
-                  registry · {totalListed} total
-                </span>
-              )}
-              <span className="px-2 py-1 rounded border border-n-border text-n-muted flex items-center gap-1.5">
-                {loading ? (
-                  <>
-                    <Loader2 className="w-3 h-3 animate-spin shrink-0" /> loading…
-                  </>
-                ) : (
-                  <>
-                    <Wifi className="w-3 h-3 text-cyan-500 shrink-0" />
-                    {agents.length} verified · {loungeIds.length} on floor
-                  </>
-                )}
+            {!loading && (
+              <div className="flex flex-col items-stretch sm:items-end gap-2 text-[10px] font-mono shrink-0">
+                <div className="flex flex-wrap items-center gap-2 justify-end">
+                  <span className="px-2 py-1 rounded-md border border-n-border bg-n-surface text-n-muted tabular-nums">
+                    {agents.length} agents
+                  </span>
+                  <span className="px-2 py-1 rounded-md border border-cyan-500/35 bg-cyan-50 dark:bg-cyan-950/60 text-cyan-800 dark:text-cyan-300 tabular-nums">
+                    {loungeIds.length} on screen
+                  </span>
+                  <span className="px-2 py-1 rounded-md border border-n-border bg-n-surface text-n-muted inline-flex items-center gap-1 tabular-nums">
+                    <RefreshCw className="w-3 h-3 opacity-70" />
+                    shuffle in {secToShuffle}s
+                  </span>
+                </div>
+                <div className="h-1 w-full sm:w-48 rounded-full bg-n-border overflow-hidden">
+                  <div
+                    className="h-full bg-cyan-500 transition-[width] duration-300 ease-linear"
+                    style={{
+                      width: `${Math.min(
+                        100,
+                        (secToShuffle / (ROTATE_MS / 1000)) * 100
+                      )}%`,
+                    }}
+                  />
+                </div>
+              </div>
+            )}
+            {loading && (
+              <span className="px-2 py-1 rounded-md border border-n-border bg-n-surface text-n-muted text-[10px] font-mono inline-flex items-center gap-1.5 self-start">
+                <Loader2 className="w-3 h-3 animate-spin shrink-0" />
+                loading…
               </span>
-            </div>
+            )}
           </div>
-          {filterNote && (
-            <p className="text-[10px] font-mono text-amber-600 dark:text-amber-400/90 bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200/50 dark:border-amber-800/40 rounded-md px-2.5 py-1.5">
-              {filterNote}
-            </p>
+
+          {!loading && agents.length > 0 && (
+            <div className="relative max-w-md">
+              <label className="sr-only" htmlFor="agent-lounge-search">
+                Find by name or normie number
+              </label>
+              <div className="relative flex items-center">
+                <Search className="absolute left-2.5 w-3.5 h-3.5 text-n-faint pointer-events-none" />
+                <input
+                  id="agent-lounge-search"
+                  type="search"
+                  autoComplete="off"
+                  placeholder="Search name or #…"
+                  value={agentQuery}
+                  onChange={e => setAgentQuery(e.target.value)}
+                  className="w-full pl-9 pr-3 py-2.5 sm:py-2 text-xs font-mono bg-n-surface border border-n-border rounded-lg text-n-text placeholder:text-n-faint focus:outline-none focus:border-cyan-500/50"
+                />
+              </div>
+              {agentQuery.trim().length > 0 && (
+                <ul
+                  className="absolute z-50 left-0 right-0 mt-1 max-h-56 overflow-y-auto rounded-lg border border-n-border bg-n-bg shadow-lg py-1"
+                  role="listbox"
+                >
+                  {searchHits.length === 0 ? (
+                    <li className="px-3 py-2 text-[10px] font-mono text-n-faint">
+                      No match — try another name or number.
+                    </li>
+                  ) : (
+                    searchHits.map(a => {
+                      const tid = Number(a.tokenId);
+                      const label =
+                        infoMap.get(tid)?.name ?? a.name;
+                      return (
+                        <li key={tid} role="none">
+                          <button
+                            type="button"
+                            role="option"
+                            className="w-full text-left px-3 py-2.5 text-xs font-mono hover:bg-n-surface flex items-center justify-between gap-2"
+                            onClick={() => {
+                              bringToStage(tid, {
+                                fromEdge: true,
+                                openSheet: false,
+                              });
+                              setAgentQuery("");
+                            }}
+                          >
+                            <span className="text-n-text truncate">{label}</span>
+                            <span className="text-[10px] text-n-faint shrink-0 tabular-nums">
+                              #{tid}
+                            </span>
+                          </button>
+                        </li>
+                      );
+                    })
+                  )}
+                </ul>
+              )}
+            </div>
           )}
         </header>
 
@@ -1043,19 +1144,19 @@ function LoungeRoom() {
               <AnimatePresence>
                 {bubbles.map(b => {
                   const cw = stageRef.current?.clientWidth ?? 360;
-                  const bw = Math.min(200, cw - 16);
+                  const bw = Math.min(124, cw - 12);
                   const left = Math.max(
-                    8,
-                    Math.min(b.x - bw / 2, cw - bw - 8)
+                    6,
+                    Math.min(b.x - bw / 2, cw - bw - 6)
                   );
-                  const top = Math.max(6, b.y - (b.solo ? 58 : 72));
+                  const top = Math.max(4, b.y - (b.solo ? 42 : 52));
                   return (
                     <motion.div
                       key={b.id}
-                      initial={{ opacity: 0, y: 6, scale: 0.94 }}
+                      initial={{ opacity: 0, y: 4, scale: 0.96 }}
                       animate={{ opacity: 1, y: 0, scale: 1 }}
-                      exit={{ opacity: 0, y: -4, scale: 0.95 }}
-                      transition={{ duration: 0.16 }}
+                      exit={{ opacity: 0, y: -3, scale: 0.97 }}
+                      transition={{ duration: 0.14 }}
                       className="absolute pointer-events-none"
                       style={{
                         left,
@@ -1065,22 +1166,22 @@ function LoungeRoom() {
                       }}
                     >
                       <div
-                        className={`rounded-lg border px-2 py-1.5 shadow-md ${
+                        className={`rounded border px-1.5 py-1 shadow-sm ${
                           b.solo
-                            ? "bg-n-surface/95 border-dashed border-n-border"
-                            : "bg-n-white border-n-border"
+                            ? "border-dashed border-cyan-600/50 dark:border-cyan-500/45 bg-n-white dark:bg-n-surface"
+                            : "border-n-border bg-n-white dark:bg-n-surface"
                         }`}
                       >
-                        <div className="text-[7px] font-mono font-bold text-cyan-600 dark:text-cyan-400 uppercase tracking-wider mb-0.5">
-                          {trunc(b.name, 16)}
+                        <div className="text-[6px] font-mono font-semibold text-cyan-600 dark:text-cyan-400 uppercase tracking-wide mb-px leading-none">
+                          {trunc(b.name, 14)}
                           {b.solo && (
-                            <span className="text-n-faint font-normal ml-1">
-                              · thought
+                            <span className="text-n-muted font-normal normal-case ml-0.5">
+                              thought
                             </span>
                           )}
                         </div>
-                        <p className="text-[9px] sm:text-[10px] font-mono text-n-text leading-snug break-words">
-                          {trunc(b.text, b.solo ? 90 : 120)}
+                        <p className="text-[7px] font-mono text-n-text leading-snug break-words">
+                          {trunc(b.text, b.solo ? 64 : 88)}
                         </p>
                       </div>
                     </motion.div>
@@ -1092,7 +1193,8 @@ function LoungeRoom() {
                 <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 px-6 text-center bg-n-bg/90 backdrop-blur-sm">
                   <Bot className="w-10 h-10 text-n-faint" />
                   <p className="text-sm font-mono text-n-muted max-w-sm">
-                    No bound agents returned. Try again after the registry syncs.
+                    No agents are on-chain yet, or the list didn’t load. Refresh
+                    and try again.
                   </p>
                 </div>
               )}
@@ -1114,7 +1216,7 @@ function LoungeRoom() {
                     ))}
                   </div>
                   <p className="text-xs font-mono text-n-muted px-4 text-center">
-                    Loading bound agents & personas…
+                    Loading agents and personas…
                   </p>
                 </div>
               )}
@@ -1129,13 +1231,14 @@ function LoungeRoom() {
             <div className="px-3 py-2.5 border-b border-n-border flex items-center gap-2 flex-shrink-0">
               <MessageSquare className="w-3.5 h-3.5 text-n-muted" />
               <span className="text-[10px] font-mono text-n-muted uppercase tracking-wider">
-                persona chatter
+                when they meet
               </span>
             </div>
             <div className="flex-1 overflow-y-auto overscroll-contain divide-y divide-n-border min-h-[120px]">
               {chatLog.length === 0 && !loading && (
                 <p className="text-[10px] font-mono text-n-faint p-3">
-                  When two agents meet on the floor, their API lines appear here.
+                  Pairs who bump into each other show both sides here — pulled
+                  from their personas.
                 </p>
               )}
               {chatLog.map(entry => (
@@ -1205,6 +1308,22 @@ function LoungeRoom() {
                       close
                     </button>
                   </div>
+                  {focusId != null &&
+                    !loungeIds.includes(focusId) &&
+                    agents.some(a => Number(a.tokenId) === focusId) && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          bringToStage(focusId, {
+                            fromEdge: true,
+                            openSheet: true,
+                          })
+                        }
+                        className="w-full sm:w-auto inline-flex items-center justify-center min-h-[40px] px-4 text-[11px] font-mono rounded-md bg-cyan-600 text-white hover:bg-cyan-500 dark:bg-cyan-700 dark:hover:bg-cyan-600"
+                      >
+                        Put on floor
+                      </button>
+                    )}
                   {focusInfo?.greeting && (
                     <p className="text-[11px] font-mono text-n-text leading-relaxed">
                       {focusInfo.greeting}
@@ -1273,8 +1392,7 @@ function LoungeRoom() {
         <footer className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 text-[9px] font-mono text-n-faint border-t border-n-border pt-5">
           <span className="flex items-center gap-1.5">
             <Bot className="w-3 h-3 shrink-0" />
-            Pace and pauses follow each persona&apos;s published text (hashed
-            deterministically).
+            Lines from their API personas when paths cross.
           </span>
           <span className="sm:ml-auto flex flex-wrap gap-x-3 gap-y-1">
             <a
@@ -1299,14 +1417,19 @@ function LoungeRoom() {
         {/* Registry */}
         {agents.length > 0 && (
           <section className="space-y-3 border-t border-n-border pt-6">
-            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
-              <div className="flex items-center gap-2">
-                <Users className="w-3.5 h-3.5 text-n-muted shrink-0" />
-                <h2 className="text-xs font-mono text-n-muted uppercase tracking-wider">
-                  bound agent roster
-                </h2>
+            <div className="flex flex-col gap-1.5 sm:flex-row sm:items-end sm:justify-between sm:gap-4">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <Users className="w-3.5 h-3.5 text-n-muted shrink-0" />
+                  <h2 className="text-xs font-mono text-n-muted uppercase tracking-wider">
+                    browse all
+                  </h2>
+                </div>
+                <p className="text-[9px] font-mono text-n-faint max-w-lg">
+                  Tap a portrait — same as picking from search.
+                </p>
               </div>
-              <span className="text-[10px] font-mono text-n-faint">
+              <span className="text-[10px] font-mono text-n-faint shrink-0">
                 {regShown} / {regTotal}
                 {infoProgress < regTotal &&
                   ` · personas ${infoProgress}/${regTotal}`}
@@ -1322,13 +1445,13 @@ function LoungeRoom() {
                   <button
                     key={tid}
                     type="button"
-                    onClick={() => bringToStage(tid, true)}
+                    onClick={() => bringToStage(tid, { openSheet: true })}
                     className={`relative flex flex-col items-center gap-0.5 p-1.5 sm:p-1 rounded-lg border min-h-[72px] sm:min-h-0 transition-colors touch-manipulation ${
                       on
                         ? "border-cyan-400/60 bg-cyan-50/60 dark:bg-cyan-950/30"
                         : "border-n-border active:bg-n-surface hover:border-n-muted"
                     }`}
-                    title={`${inf?.name ?? a.name}`}
+                    title={`Bring ${inf?.name ?? a.name} onto the floor`}
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
