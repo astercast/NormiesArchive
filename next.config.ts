@@ -1,6 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  async redirects() {
+    return [{ source: "/archive-lounge", destination: "/agentic-lounge", permanent: false }];
+  },
   images: {
     remotePatterns: [
       {
