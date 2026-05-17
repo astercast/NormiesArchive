@@ -1,10 +1,9 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
-  Loader2, Bot, Wifi, Lock, MessageSquare, Users, Sparkles, ChevronDown,
-  ChevronUp,
+  Loader2, Bot, Wifi, Lock, MessageSquare, Users, ChevronDown, ChevronUp,
 } from "lucide-react";
 import Link from "next/link";
 import type { AgentInfo } from "@/components/AgentSection";
@@ -353,6 +352,10 @@ function LoungeRoom() {
   const [focusId, setFocusId] = useState<number | null>(null);
   const [traitsOpen, setTraitsOpen] = useState(false);
 
+  useEffect(() => {
+    setTraitsOpen(false);
+  }, [focusId]);
+
   const stageRef = useRef<HTMLDivElement>(null);
   const bgCanvasRef = useRef<HTMLCanvasElement>(null);
   const rafRef = useRef(0);
@@ -438,7 +441,7 @@ function LoungeRoom() {
     }
   }, [loungeIds]);
 
-  const bringToStage = useCallback((tokenId: number, type?: string, fromEdge = true) => {
+  const bringToStage = useCallback((tokenId: number, fromEdge = true) => {
     setFocusId(tokenId);
     setLoungeIds(prev => {
       if (prev.includes(tokenId)) return prev;
@@ -633,8 +636,7 @@ function LoungeRoom() {
       const minFy = ANC_Y + 8;
       const maxFy = sh - FOOT_BELOW - 16;
 
-      const idleChance =
-        0.00022 * idleLean(undefined) * (dt / 16);
+      const idleBase = 0.00024 * (dt / 16);
 
       for (const id of ids) {
         const inf = infos.get(id);
@@ -655,7 +657,7 @@ function LoungeRoom() {
         }
 
         const lean = idleLean(inf);
-        if (Math.random() < idleChance * lean) {
+        if (Math.random() < idleBase * lean) {
           b.state = "idle";
           b.stateUntil =
             now +
@@ -877,15 +879,25 @@ function LoungeRoom() {
     return () => cancelAnimationFrame(rafRef.current);
   }, []);
 
-  const loungeNormies: Normie[] = loungeIds.map(id => {
-    const a = agents.find(x => Number(x.tokenId) === id);
-    return {
-      tokenId: id,
-      name: a?.name ?? `#${id}`,
-      type: a?.type ?? "Human",
-      info: infoMap.get(id),
-    };
-  });
+  const agentsByToken = useMemo(() => {
+    const m = new Map<number, AgentItem>();
+    for (const a of agents) m.set(Number(a.tokenId), a);
+    return m;
+  }, [agents]);
+
+  const loungeNormies: Normie[] = useMemo(
+    () =>
+      loungeIds.map(id => {
+        const a = agentsByToken.get(id);
+        return {
+          tokenId: id,
+          name: a?.name ?? `#${id}`,
+          type: a?.type ?? "Human",
+          info: infoMap.get(id),
+        };
+      }),
+    [loungeIds, agentsByToken, infoMap]
+  );
 
   const regTotal = agents.length;
   const regShown = Math.min(regPage * REG_PAGE_SIZE, regTotal);
@@ -912,7 +924,6 @@ function LoungeRoom() {
           <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
             <div className="space-y-1">
               <div className="flex items-center gap-2 flex-wrap">
-                <Sparkles className="w-4 h-4 text-cyan-500 shrink-0" />
                 <h1 className="font-mono text-lg sm:text-2xl font-medium text-n-text tracking-tight">
                   agentic lounge
                 </h1>
@@ -921,9 +932,8 @@ function LoungeRoom() {
                 </span>
               </div>
               <p className="text-[11px] sm:text-xs font-mono text-n-muted max-w-2xl leading-relaxed">
-                Only normies with an active on-chain agent binding appear here.
-                Motion rhythms and dialogue lines are derived from each
-                persona&apos;s published fields — nothing invented.
+                On-chain bindings only. Motion and speech use published persona
+                fields — nothing invented.
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2 sm:justify-end text-[10px] font-mono">
@@ -954,7 +964,7 @@ function LoungeRoom() {
         </header>
 
         {/* Stage + chat: stack on mobile */}
-        <div className="flex flex-col lg:flex-row gap-3 lg:gap-4 items-stretch lg:items-stretch">
+        <div className="flex flex-col lg:flex-row gap-3 lg:gap-4 items-stretch">
           <div
             className="relative flex-1 min-w-0 rounded-xl border border-n-border bg-n-bg shadow-sm overflow-hidden ring-1 ring-black/[0.03] dark:ring-white/[0.05]"
             style={{ minHeight: "min(58vh, 520px)", height: "min(58vh, 520px)" }}
@@ -984,14 +994,13 @@ function LoungeRoom() {
                     setFocusId(n.tokenId);
                     setTraitsOpen(true);
                   }}
-                  title={n.info?.tagline ? `"${n.info.tagline}"` : n.name}
+                  title={n.info?.tagline?.trim() ? `"${n.info.tagline}"` : n.name}
                   aria-label={`Inspect ${n.name}`}
                 />
               ))}
 
               {loungeNormies.map(n => {
                 const inf = n.info;
-                const muted = "rgba(72,73,75,0.45)";
                 return (
                   <div
                     key={`name-${n.tokenId}`}
@@ -1003,18 +1012,16 @@ function LoungeRoom() {
                     style={{ width: SPR_W }}
                   >
                     <div
-                      className="text-[6px] sm:text-[7px] font-mono font-medium leading-tight"
-                      style={{
-                        color: focusId === n.tokenId ? "#06b6d4" : muted,
-                      }}
+                      className={`text-[6px] sm:text-[7px] font-mono font-medium leading-tight ${
+                        focusId === n.tokenId
+                          ? "text-cyan-500"
+                          : "text-n-muted"
+                      }`}
                     >
                       {trunc(n.name, 12)}
                     </div>
                     {inf?.canvas && (
-                      <div
-                        className="text-[5px] sm:text-[6px] font-mono"
-                        style={{ color: "rgba(72,73,75,0.32)" }}
-                      >
+                      <div className="text-[5px] sm:text-[6px] font-mono text-n-faint">
                         lv{inf.canvas.level}
                       </div>
                     )}
@@ -1085,9 +1092,7 @@ function LoungeRoom() {
                 <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 px-6 text-center bg-n-bg/90 backdrop-blur-sm">
                   <Bot className="w-10 h-10 text-n-faint" />
                   <p className="text-sm font-mono text-n-muted max-w-sm">
-                    No ERC-8004 agents with a verified on-chain binding were
-                    returned. If the registry lists agents but none appear here,
-                    refresh after bindings sync.
+                    No bound agents returned. Try again after the registry syncs.
                   </p>
                 </div>
               )}
@@ -1130,8 +1135,7 @@ function LoungeRoom() {
             <div className="flex-1 overflow-y-auto overscroll-contain divide-y divide-n-border min-h-[120px]">
               {chatLog.length === 0 && !loading && (
                 <p className="text-[10px] font-mono text-n-faint p-3">
-                  Pair up agents on the floor — lines appear here from their
-                  API voice fields only.
+                  When two agents meet on the floor, their API lines appear here.
                 </p>
               )}
               {chatLog.map(entry => (
@@ -1223,17 +1227,17 @@ function LoungeRoom() {
                       </button>
                       {traitsOpen && (
                         <div className="flex flex-wrap gap-1.5">
-                          {focusInfo?.personalityTraits?.map(t => (
+                          {focusInfo.personalityTraits?.map((t, i) => (
                             <span
-                              key={`t-${t}`}
+                              key={`t-${focusId}-${i}`}
                               className="text-[9px] font-mono px-2 py-0.5 rounded-full border border-n-border text-n-muted"
                             >
                               {t}
                             </span>
                           ))}
-                          {focusInfo?.quirks?.map(q => (
+                          {focusInfo.quirks?.map((q, i) => (
                             <span
-                              key={`q-${q}`}
+                              key={`q-${focusId}-${i}`}
                               className="text-[9px] font-mono px-2 py-0.5 rounded-full border border-dashed border-n-border text-n-faint"
                             >
                               {q}
@@ -1268,8 +1272,9 @@ function LoungeRoom() {
         {/* Footer strip */}
         <footer className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 text-[9px] font-mono text-n-faint border-t border-n-border pt-5">
           <span className="flex items-center gap-1.5">
-            <Bot className="w-3 h-3" /> Movement speed & pause cadence scale from
-            published trait / quirk text (deterministic).
+            <Bot className="w-3 h-3 shrink-0" />
+            Pace and pauses follow each persona&apos;s published text (hashed
+            deterministically).
           </span>
           <span className="sm:ml-auto flex flex-wrap gap-x-3 gap-y-1">
             <a
@@ -1317,7 +1322,7 @@ function LoungeRoom() {
                   <button
                     key={tid}
                     type="button"
-                    onClick={() => bringToStage(tid, a.type, true)}
+                    onClick={() => bringToStage(tid, true)}
                     className={`relative flex flex-col items-center gap-0.5 p-1.5 sm:p-1 rounded-lg border min-h-[72px] sm:min-h-0 transition-colors touch-manipulation ${
                       on
                         ? "border-cyan-400/60 bg-cyan-50/60 dark:bg-cyan-950/30"
