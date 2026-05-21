@@ -58,7 +58,7 @@ function The100Badge({ rank }: { rank: number }) {
   );
 }
 
-function NormieCard({ n, large = false }: { n: WalletNormie; large?: boolean }) {
+function NormieCard({ n }: { n: WalletNormie }) {
   const isGold = n.isThe100;
   const ringClass = isGold
     ? "ring-2 ring-amber-400/70 shadow-[0_0_12px_rgba(251,191,36,0.25)]"
@@ -75,30 +75,27 @@ function NormieCard({ n, large = false }: { n: WalletNormie; large?: boolean }) 
         <img
           src={`${BASE_IMG}/normie/${n.tokenId}/image.png`}
           alt={`Normie #${n.tokenId}`}
-          width={large ? 240 : 160}
-          height={large ? 240 : 160}
+          width={160}
+          height={160}
           loading="lazy"
           className="w-full aspect-square block"
           style={{ imageRendering: "pixelated" }}
         />
-        {!large && <TypeTag type={n.type} />}
+        <TypeTag type={n.type} />
         <LevelBadge level={n.level} />
         {n.isThe100 && n.the100Rank && <The100Badge rank={n.the100Rank} />}
         {/* hover overlay */}
         <div className="absolute inset-0 bg-n-text/0 group-hover:bg-n-text/5 transition-colors duration-200 pointer-events-none" />
       </div>
-      <div className="mt-1.5 px-0.5 space-y-0.5">
+      <div className="mt-1.5 px-0.5">
         <div className="flex items-center justify-between">
-          <span className={`font-mono text-n-muted ${large ? "text-xs" : "text-[10px]"}`}>#{n.tokenId}</span>
+          <span className="font-mono text-n-muted text-[10px]">#{n.tokenId}</span>
           {n.ap > 0 && (
-            <span className={`font-mono text-n-faint flex items-center gap-px ${large ? "text-xs" : "text-[10px]"}`}>
-              <Zap className={large ? "w-3 h-3" : "w-2.5 h-2.5"} />{n.ap}
+            <span className="font-mono text-n-faint flex items-center gap-px text-[10px]">
+              <Zap className="w-2.5 h-2.5" />{n.ap}
             </span>
           )}
         </div>
-        {large && n.type && n.type !== "Human" && (
-          <div className="text-[10px] font-mono text-n-faint">{n.type}</div>
-        )}
       </div>
     </Link>
   );
@@ -120,26 +117,6 @@ function StatCard({
         {icon}
       </div>
       <div className="text-2xl font-mono font-semibold text-n-text">{value}</div>
-    </div>
-  );
-}
-
-// Level legend strip
-function LevelLegend() {
-  const tiers = [
-    { label: "Lv 20+", bg: "bg-amber-400", text: "text-black" },
-    { label: "Lv 10+", bg: "bg-violet-500", text: "text-white" },
-    { label: "Lv 5+",  bg: "bg-sky-500",    text: "text-white" },
-    { label: "Lv 1+",  bg: "bg-n-text/60",  text: "text-n-bg" },
-  ];
-  return (
-    <div className="flex items-center gap-2 flex-wrap">
-      {tiers.map(t => (
-        <span key={t.label} className={`inline-flex items-center gap-1 text-[10px] font-mono px-1.5 py-0.5 rounded ${t.bg} ${t.text}`}>
-          {t.label}
-        </span>
-      ))}
-      <span className="text-[10px] font-mono text-n-faint ml-1">level badge</span>
     </div>
   );
 }
@@ -189,9 +166,6 @@ export default function AddressClient({ addr }: Props) {
     () => (data ? sortWalletNormies(data.normies, sortKey) : []),
     [data, sortKey]
   );
-
-  const spotlight = sortedNormies.slice(0, 3);
-  const rest = sortedNormies.slice(3);
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-10 space-y-10">
@@ -272,51 +246,21 @@ export default function AddressClient({ addr }: Props) {
       )}
 
       {data && sortedNormies.length > 0 && (
-        <WalletSortBar value={sortKey} onChange={setSortKey} />
-      )}
-
-      {/* Spotlight — top 3 for current sort */}
-      {data && spotlight.length > 0 && (
         <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-mono text-n-muted uppercase tracking-widest">top normies</span>
-            <LevelLegend />
-          </div>
-          <div className={`grid gap-4 ${
-            spotlight.length === 1 ? "grid-cols-1 max-w-xs" :
-            spotlight.length === 2 ? "grid-cols-2 max-w-sm" :
-            "grid-cols-3 max-w-md"
-          }`}>
-            {spotlight.map(n => <NormieCard key={n.tokenId} n={n} large />)}
-          </div>
-        </div>
-      )}
-
-      {/* Full grid */}
-      {data && rest.length > 0 && (
-        <div className="space-y-3">
-          <div className="flex items-center justify-between gap-3 flex-wrap">
-            <span className="text-xs font-mono text-n-muted uppercase tracking-widest">
-              all {data.totalOwned} normie{data.totalOwned !== 1 ? "s" : ""}
-              {data.the100Count > 0 && (
-                <span className="ml-3 text-amber-400/80">
-                  ★ {data.the100Count} in the 100
-                </span>
-              )}
-            </span>
-          </div>
+          <WalletSortBar value={sortKey} onChange={setSortKey} />
+          <span className="text-xs font-mono text-n-muted uppercase tracking-widest block">
+            all {data.totalOwned} normie{data.totalOwned !== 1 ? "s" : ""}
+            {data.the100Count > 0 && (
+              <span className="ml-3 text-amber-400/80">
+                ★ {data.the100Count} in the 100
+              </span>
+            )}
+          </span>
           <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10 gap-2">
-            {rest.map(n => (
+            {sortedNormies.map(n => (
               <NormieCard key={n.tokenId} n={n} />
             ))}
           </div>
-        </div>
-      )}
-
-      {/* If only ≤3 normies */}
-      {data && sortedNormies.length > 0 && rest.length === 0 && (
-        <div className="text-xs font-mono text-n-faint text-center pt-2">
-          showing all {data.totalOwned} normie{data.totalOwned !== 1 ? "s" : ""}
         </div>
       )}
     </div>
