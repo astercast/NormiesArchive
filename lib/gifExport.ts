@@ -1,6 +1,6 @@
 "use client";
 
-import { renderToCanvas, GRID_SIZE } from "./pixelUtils";
+import { renderToCanvas, GRID_SIZE, buildSimulatedFrames } from "./pixelUtils";
 
 // Load GIF.js from CDN
 let gifJsPromise: Promise<any> | null = null;
@@ -106,6 +106,71 @@ export async function exportTimelineGif(
       ctx,
       offscreen
     );
+    onProgress?.(1);
+  }
+}
+
+/** Same animation as the Latest Works hero — simulated origin→latest frames, 350ms steps. */
+export async function exportLatestStyleGif(
+  originalStr: string,
+  currentStr: string,
+  editHistory: Array<{ changeCount: number }>,
+  tokenId: number,
+  scale: number = 8,
+  onProgress?: (progress: number) => void
+): Promise<void> {
+  if (!originalStr || !currentStr) return;
+  const frames = buildSimulatedFrames(originalStr, currentStr, editHistory);
+  if (frames.length < 2) return;
+
+  const size = GRID_SIZE * scale;
+  const offscreen = document.createElement("canvas");
+  offscreen.width = size;
+  offscreen.height = size;
+  const ctx = offscreen.getContext("2d")!;
+  const LATEST_FRAME_MS = 350;
+
+  try {
+    const [GIF, workerScript] = await Promise.all([loadGifJs(), getWorkerBlobUrl()]);
+
+    const gif = new GIF({
+      workers: 2,
+      quality: 10,
+      width: size,
+      height: size,
+      workerScript,
+    });
+
+    for (let i = 0; i < frames.length; i++) {
+      renderToCanvas(ctx, frames[i], scale);
+
+      const wmText = `normie #${tokenId} · normiesarchive.vercel.app`;
+      const wmFontSize = Math.max(6, Math.round(scale * 0.85));
+      ctx.font = `${wmFontSize}px monospace`;
+      ctx.fillStyle = "rgba(140,140,140,0.85)";
+      ctx.textAlign = "right";
+      ctx.textBaseline = "top";
+      ctx.fillText(wmText, size - 3, 3);
+      ctx.textBaseline = "alphabetic";
+
+      const delay =
+        i === 0 ? 800 : i === frames.length - 1 ? 1200 : LATEST_FRAME_MS;
+      gif.addFrame(ctx, { delay, copy: true });
+      onProgress?.((i + 0.5) / frames.length);
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      gif.on("finished", (blob: Blob) => {
+        downloadBlob(blob, `normie-${tokenId}-latest-style.gif`);
+        onProgress?.(1);
+        resolve();
+      });
+      gif.on("error", reject);
+      gif.render();
+    });
+  } catch (err) {
+    console.warn("Latest-style GIF export failed, falling back to PNG:", err);
+    await exportCurrentFrameAsPng(currentStr, tokenId, scale, ctx, offscreen);
     onProgress?.(1);
   }
 }

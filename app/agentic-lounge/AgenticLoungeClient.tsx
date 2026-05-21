@@ -19,6 +19,8 @@ import {
   ChevronDown,
   ChevronUp,
   Sparkles,
+  Star,
+  BookOpen,
 } from "lucide-react";
 import Link from "next/link";
 import type { AgentInfo } from "@/components/AgentSection";
@@ -39,25 +41,32 @@ const FRAME_PX = SPR_W;
 const STAND_FRAME = 4;
 const SIT_FRAME = 5;
 
-/* ─── Lifecycle constants — slower and steadier ───────────────────────── */
-const WALK_FRAME_MS = 160;
-const BASE_SPEED = 0.75;
-const TALK_DIST = SPR_W * 2.25;
-const TURN_GAP_MS = 2900; // gap between each conversation turn
-const TURNS_PER_CONV = 5; // multi-turn flow
-const TALK_MS = TURN_GAP_MS * (TURNS_PER_CONV - 1) + 3400; // ~15s total
-const CONV_COOL = 5500; // minimum gap between starting new conversations
-const MAX_TALKS = 4;
-const ROTATE_MS = 90_000; // shuffle floor every 90s (was 20s)
+/* ─── Lifecycle constants ─────────────────────────────────────────────── */
+const WALK_FRAME_MS = 140;
+const BASE_SPEED = 1.35;
+const TALK_DIST = SPR_W * 2.35;
+const TURN_GAP_MS = 2900;
+const TURNS_PER_CONV = 5;
+const TALK_MS = TURN_GAP_MS * (TURNS_PER_CONV - 1) + 3400;
+const CONV_COOL = 4800;
+const MAX_TALKS = 5;
+const ROTATE_MS = 90_000;
 const BATCH_SZ = 5;
 const MAX_FETCH = 500;
 const CHAT_MAX = 24;
+const WITNESS_MAX = 40;
 const REG_PAGE_SIZE = 60;
-const IDLE_BASE = 0.0002;
-const IDLE_MIN_MS = 1100;
-const IDLE_MAX_MS = 2700;
+const IDLE_BASE = 0.00006;
+const IDLE_MIN_MS = 700;
+const IDLE_MAX_MS = 1600;
+const WANDER_MIN_MS = 1800;
+const WANDER_MAX_MS = 4200;
+const MAX_PINS = 3;
 const PASSCODE = "4356";
 const LS_KEY = "nl_unlocked_v3";
+const LS_DISCOVERED = "nl_discovered_v4";
+const LS_PINNED = "nl_pinned_v4";
+const LS_WITNESS = "nl_witness_v4";
 
 /* ─── Types ───────────────────────────────────────────────────────────── */
 interface AgentItem {
@@ -77,6 +86,9 @@ interface Body {
   stateUntil: number;
   partnerId: number | null;
   convoId: string | null;
+  wanderTx: number;
+  wanderTy: number;
+  wanderUntil: number;
 }
 
 interface Bubble {
@@ -114,7 +126,46 @@ interface ChatEntry {
   ts: number;
   aName: string;
   bName: string;
+  aId: number;
+  bId: number;
   lines: ChatLine[];
+}
+
+interface WitnessEntry extends ChatEntry {
+  witnessed: true;
+}
+
+type SidebarTab = "live" | "witness" | "roster";
+
+function loadNumSet(key: string): Set<number> {
+  if (typeof window === "undefined") return new Set();
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return new Set();
+    const arr = JSON.parse(raw) as number[];
+    return new Set(arr.filter(n => Number.isFinite(n)));
+  } catch {
+    return new Set();
+  }
+}
+
+function saveNumSet(key: string, set: Set<number>) {
+  localStorage.setItem(key, JSON.stringify([...set]));
+}
+
+function loadWitnessLog(): WitnessEntry[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(LS_WITNESS);
+    if (!raw) return [];
+    return JSON.parse(raw) as WitnessEntry[];
+  } catch {
+    return [];
+  }
+}
+
+function saveWitnessLog(entries: WitnessEntry[]) {
+  localStorage.setItem(LS_WITNESS, JSON.stringify(entries.slice(0, WITNESS_MAX)));
 }
 
 /* ─── Persona helpers ─────────────────────────────────────────────────── */
@@ -152,11 +203,11 @@ function timeAgo(ts: number): string {
 }
 
 function computeStageCap(innerWidth: number): number {
-  if (innerWidth < 420) return 4;
-  if (innerWidth < 640) return 6;
-  if (innerWidth < 900) return 8;
-  if (innerWidth < 1200) return 10;
-  return 12;
+  if (innerWidth < 420) return 5;
+  if (innerWidth < 640) return 7;
+  if (innerWidth < 900) return 9;
+  if (innerWidth < 1200) return 11;
+  return 14;
 }
 
 /* ─── Voice corpus & dialogue engine ──────────────────────────────────── */
@@ -432,7 +483,23 @@ function buildScript(
   ];
 }
 
-/* ─── Bodies ──────────────────────────────────────────────────────────── */
+/* ─── Bodies & wander ─────────────────────────────────────────────────── */
+function pickWanderTarget(
+  minFx: number,
+  maxFx: number,
+  minFy: number,
+  maxFy: number
+): { tx: number; ty: number; until: number } {
+  return {
+    tx: minFx + Math.random() * Math.max(1, maxFx - minFx),
+    ty: minFy + Math.random() * Math.max(1, maxFy - minFy),
+    until:
+      performance.now() +
+      WANDER_MIN_MS +
+      Math.random() * (WANDER_MAX_MS - WANDER_MIN_MS),
+  };
+}
+
 function mkBody(
   cw: number,
   sh: number,
@@ -444,42 +511,87 @@ function mkBody(
   const minFy = ANC_Y + 8;
   const maxFy = sh - FOOT_BELOW - 16;
   const p = paceMult(info);
-  const speed = (0.3 + Math.random() * 0.9) * BASE_SPEED * p;
+  const speed = (0.55 + Math.random() * 1.1) * BASE_SPEED * p;
   const rv = () => (Math.random() < 0.5 ? speed : -speed);
   const fy = minFy + Math.random() * Math.max(1, maxFy - minFy);
+  const wander = pickWanderTarget(minFx, maxFx, minFy, maxFy);
   if (edge) {
     const left = Math.random() < 0.5;
     return {
       fx: left ? minFx : maxFx,
       fy,
       vx: left ? Math.abs(speed) : -Math.abs(speed),
-      vy: (Math.random() - 0.5) * 0.26 * p,
+      vy: (Math.random() - 0.5) * 0.45 * p,
       facing: left ? 1 : -1,
       state: "walk",
       stateUntil: 0,
       partnerId: null,
       convoId: null,
+      wanderTx: wander.tx,
+      wanderTy: wander.ty,
+      wanderUntil: wander.until,
     };
   }
   return {
     fx: minFx + Math.random() * Math.max(1, maxFx - minFx),
     fy,
     vx: rv(),
-    vy: rv() * 0.3,
+    vy: rv() * 0.45,
     facing: Math.random() < 0.5 ? 1 : -1,
     state: "walk",
     stateUntil: 0,
     partnerId: null,
     convoId: null,
+    wanderTx: wander.tx,
+    wanderTy: wander.ty,
+    wanderUntil: wander.until,
   };
 }
 
-function rvPostTalk(info?: AgentInfo): { vx: number; vy: number } {
+function steerWander(
+  b: Body,
+  inf: AgentInfo | undefined,
+  minFx: number,
+  maxFx: number,
+  minFy: number,
+  maxFy: number,
+  now: number
+) {
+  if (now >= b.wanderUntil) {
+    const w = pickWanderTarget(minFx, maxFx, minFy, maxFy);
+    b.wanderTx = w.tx;
+    b.wanderTy = w.ty;
+    b.wanderUntil = w.until;
+  }
+  const dx = b.wanderTx - b.fx;
+  const dy = b.wanderTy - b.fy;
+  const dist = Math.hypot(dx, dy);
+  const p = paceMult(inf);
+  const speed = BASE_SPEED * p * (0.95 + Math.random() * 0.35);
+  if (dist > 6) {
+    b.vx = (dx / dist) * speed;
+    b.vy = (dy / dist) * speed * 0.55;
+  } else {
+    const w = pickWanderTarget(minFx, maxFx, minFy, maxFy);
+    b.wanderTx = w.tx;
+    b.wanderTy = w.ty;
+    b.wanderUntil = w.until;
+  }
+}
+
+function rvPostTalk(
+  info: AgentInfo | undefined,
+  minFx: number,
+  maxFx: number,
+  minFy: number,
+  maxFy: number
+): { vx: number; vy: number; wanderTx: number; wanderTy: number; wanderUntil: number } {
   const p = paceMult(info);
-  const s = (0.35 + Math.random() * 0.85) * BASE_SPEED * p;
+  const s = (0.5 + Math.random() * 1.0) * BASE_SPEED * p;
   const vx = Math.random() < 0.5 ? s : -s;
-  const vy = (Math.random() - 0.5) * 0.3 * p;
-  return { vx, vy };
+  const vy = (Math.random() - 0.5) * 0.45 * p;
+  const w = pickWanderTarget(minFx, maxFx, minFy, maxFy);
+  return { vx, vy, wanderTx: w.tx, wanderTy: w.ty, wanderUntil: w.until };
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -619,8 +731,13 @@ function LoungeRoom() {
   const [browseOpen, setBrowseOpen] = useState(false);
   const [regPage, setRegPage] = useState(1);
   const [stageW, setStageW] = useState(360);
+  const [sidebarTab, setSidebarTab] = useState<SidebarTab>("live");
+  const [discoveredIds, setDiscoveredIds] = useState<Set<number>>(() => new Set());
+  const [pinnedIds, setPinnedIds] = useState<number[]>([]);
+  const [witnessLog, setWitnessLog] = useState<WitnessEntry[]>([]);
+  const [persistReady, setPersistReady] = useState(false);
 
-  /* Refs (mutable, rAF-friendly) */
+  const pinnedRef = useRef<number[]>([]);
   const stageRef = useRef<HTMLDivElement>(null);
   const bgCanvasRef = useRef<HTMLCanvasElement>(null);
   const rafRef = useRef(0);
@@ -654,8 +771,55 @@ function LoungeRoom() {
   useEffect(() => {
     infoRef.current = infoMap;
   }, [infoMap]);
+  useEffect(() => {
+    pinnedRef.current = pinnedIds;
+  }, [pinnedIds]);
 
-  /* Init refs that need browser-time */
+  /* Load persisted discovery / pins / witness log */
+  useEffect(() => {
+    setDiscoveredIds(loadNumSet(LS_DISCOVERED));
+    const pins = [...loadNumSet(LS_PINNED)].slice(0, MAX_PINS);
+    setPinnedIds(pins);
+    setWitnessLog(loadWitnessLog());
+    setPersistReady(true);
+  }, []);
+
+  useEffect(() => {
+    if (!persistReady) return;
+    saveNumSet(LS_DISCOVERED, discoveredIds);
+  }, [discoveredIds, persistReady]);
+
+  useEffect(() => {
+    if (!persistReady) return;
+    saveNumSet(LS_PINNED, new Set(pinnedIds));
+  }, [pinnedIds, persistReady]);
+
+  useEffect(() => {
+    if (!persistReady) return;
+    saveWitnessLog(witnessLog);
+  }, [witnessLog, persistReady]);
+
+  const markDiscovered = useCallback((tokenId: number) => {
+    setDiscoveredIds(prev => {
+      if (prev.has(tokenId)) return prev;
+      const next = new Set(prev);
+      next.add(tokenId);
+      return next;
+    });
+  }, []);
+
+  const togglePin = useCallback((tokenId: number) => {
+    setPinnedIds(prev => {
+      if (prev.includes(tokenId)) {
+        return prev.filter(id => id !== tokenId);
+      }
+      if (prev.length >= MAX_PINS) return prev;
+      return [...prev, tokenId];
+    });
+    markDiscovered(tokenId);
+  }, [markDiscovered]);
+
+  /* Refs (mutable, rAF-friendly) */
   useEffect(() => {
     nextShuffleAt.current = Date.now() + ROTATE_MS;
   }, []);
@@ -698,7 +862,9 @@ function LoungeRoom() {
       setLoungeIds(prev => {
         if (prev.length <= c) return prev;
         const locked = prev.filter(
-          id => bodies.current.get(id)?.state === "talk"
+          id =>
+            bodies.current.get(id)?.state === "talk" ||
+            pinnedRef.current.includes(id)
         );
         const others = prev.filter(id => !locked.includes(id));
         const need = Math.max(0, c - locked.length);
@@ -725,6 +891,7 @@ function LoungeRoom() {
     ) => {
       const fromEdge = opts?.fromEdge ?? true;
       const openSheet = opts?.openSheet ?? false;
+      markDiscovered(tokenId);
       if (openSheet) setFocusId(tokenId);
       setLoungeIds(prev => {
         if (prev.includes(tokenId)) return prev;
@@ -735,16 +902,25 @@ function LoungeRoom() {
         walkFrames.current.set(tokenId, 0);
         const cap = capRef.current;
         if (prev.length < cap) return [...prev, tokenId];
-        const removable = prev.filter(
-          id => bodies.current.get(id)?.state !== "talk"
-        );
+        const removable = prev.filter(id => {
+          if (pinnedRef.current.includes(id)) return false;
+          return bodies.current.get(id)?.state !== "talk";
+        });
         if (!removable.length) return prev;
         const rm = removable[Math.floor(Math.random() * removable.length)];
         return [...prev.filter(id => id !== rm), tokenId];
       });
     },
-    []
+    [markDiscovered]
   );
+
+  /* Keep pinned agents on the floor */
+  useEffect(() => {
+    if (!persistReady || !pinnedIds.length) return;
+    for (const id of pinnedIds) {
+      bringToStage(id, { fromEdge: true, openSheet: false });
+    }
+  }, [pinnedIds, persistReady, bringToStage]);
 
   /* ── Initial data fetch — agents + bindings + personas ── */
   useEffect(() => {
@@ -851,9 +1027,10 @@ function LoungeRoom() {
         const cw = stageRef.current?.clientWidth ?? 360;
         const sh = stageHRef.current;
         const cap = capRef.current;
-        const removable = prev.filter(
-          id => bodies.current.get(id)?.state !== "talk"
-        );
+        const removable = prev.filter(id => {
+          if (pinnedRef.current.includes(id)) return false;
+          return bodies.current.get(id)?.state !== "talk";
+        });
         if (!removable.length) return prev;
         // swap just one at a time, gently
         const drop =
@@ -948,17 +1125,22 @@ function LoungeRoom() {
         if (b.state === "idle") {
           if (now > b.stateUntil) {
             b.state = "walk";
-            const { vx, vy } = rvPostTalk(inf);
-            b.vx = vx;
-            b.vy = vy;
+            const rv = rvPostTalk(inf, minFx, maxFx, minFy, maxFy);
+            b.vx = rv.vx;
+            b.vy = rv.vy;
+            b.wanderTx = rv.wanderTx;
+            b.wanderTy = rv.wanderTy;
+            b.wanderUntil = rv.wanderUntil;
           }
           continue;
         }
 
-        // Walking — small chance of an idle pause
+        steerWander(b, inf, minFx, maxFx, minFy, maxFy, now);
+
         if (Math.random() < IDLE_BASE * (dt / 16)) {
           b.state = "idle";
-          b.stateUntil = now + IDLE_MIN_MS + Math.random() * (IDLE_MAX_MS - IDLE_MIN_MS);
+          b.stateUntil =
+            now + IDLE_MIN_MS + Math.random() * (IDLE_MAX_MS - IDLE_MIN_MS);
           continue;
         }
 
@@ -967,19 +1149,27 @@ function LoungeRoom() {
         b.fy += b.vy * step;
         if (b.fx < minFx) {
           b.fx = minFx;
-          b.vx = Math.abs(b.vx);
+          b.vx = Math.abs(b.vx) * 1.05;
+          const w = pickWanderTarget(minFx, maxFx, minFy, maxFy);
+          b.wanderTx = w.tx;
+          b.wanderTy = w.ty;
+          b.wanderUntil = w.until;
         }
         if (b.fx > maxFx) {
           b.fx = maxFx;
-          b.vx = -Math.abs(b.vx);
+          b.vx = -Math.abs(b.vx) * 1.05;
+          const w = pickWanderTarget(minFx, maxFx, minFy, maxFy);
+          b.wanderTx = w.tx;
+          b.wanderTy = w.ty;
+          b.wanderUntil = w.until;
         }
         if (b.fy < minFy) {
           b.fy = minFy;
-          b.vy = Math.abs(b.vy);
+          b.vy = Math.abs(b.vy) * 1.05;
         }
         if (b.fy > maxFy) {
           b.fy = maxFy;
-          b.vy = -Math.abs(b.vy);
+          b.vy = -Math.abs(b.vy) * 1.05;
         }
         if (Math.abs(b.vx) > 0.05) b.facing = b.vx > 0 ? 1 : -1;
       }
@@ -1032,37 +1222,53 @@ function LoungeRoom() {
           bA.state = "walk";
           bA.partnerId = null;
           bA.convoId = null;
-          const { vx, vy } = rvPostTalk(ai);
-          bA.vx = vx;
-          bA.vy = vy;
+          const rv = rvPostTalk(ai, minFx, maxFx, minFy, maxFy);
+          bA.vx = rv.vx;
+          bA.vy = rv.vy;
+          bA.wanderTx = rv.wanderTx;
+          bA.wanderTy = rv.wanderTy;
+          bA.wanderUntil = rv.wanderUntil;
         }
         if (bB) {
           bB.state = "walk";
           bB.partnerId = null;
           bB.convoId = null;
-          const { vx, vy } = rvPostTalk(bi);
-          bB.vx = vx;
-          bB.vy = vy;
+          const rv = rvPostTalk(bi, minFx, maxFx, minFy, maxFy);
+          bB.vx = rv.vx;
+          bB.vy = rv.vy;
+          bB.wanderTx = rv.wanderTx;
+          bB.wanderTy = rv.wanderTy;
+          bB.wanderUntil = rv.wanderUntil;
         }
         convos.splice(i, 1);
         convCount.current = Math.max(0, convCount.current - 1);
 
-        // Log the conversation
-        setChatLog(prev =>
-          [
-            {
-              id: c.id,
-              ts: Date.now(),
-              aName: ai?.name ?? `#${c.aId}`,
-              bName: bi?.name ?? `#${c.bId}`,
-              lines: c.script.map(t => ({
-                who: infos.get(t.speakerId)?.name ?? `#${t.speakerId}`,
-                text: t.text,
-              })),
-            },
-            ...prev,
-          ].slice(0, CHAT_MAX)
-        );
+        const entry: ChatEntry = {
+          id: c.id,
+          ts: Date.now(),
+          aName: ai?.name ?? `#${c.aId}`,
+          bName: bi?.name ?? `#${c.bId}`,
+          aId: c.aId,
+          bId: c.bId,
+          lines: c.script.map(t => ({
+            who: infos.get(t.speakerId)?.name ?? `#${t.speakerId}`,
+            text: t.text,
+          })),
+        };
+
+        setChatLog(prev => [entry, ...prev].slice(0, CHAT_MAX));
+
+        setDiscoveredIds(prev => {
+          const next = new Set(prev);
+          next.add(c.aId);
+          next.add(c.bId);
+          return next.size === prev.size ? prev : next;
+        });
+        setWitnessLog(prev => {
+          const witness: WitnessEntry = { ...entry, witnessed: true };
+          if (prev.some(w => w.id === witness.id)) return prev;
+          return [witness, ...prev].slice(0, WITNESS_MAX);
+        });
         // Fade out bubbles
         const ids2 = [c.aId, c.bId];
         setTimeout(() => {
@@ -1269,6 +1475,46 @@ function LoungeRoom() {
   const regTotal = agents.length;
   const regShown = Math.min(regPage * REG_PAGE_SIZE, regTotal);
   const regSlice = agents.slice(0, regShown);
+  const discoveryPct =
+    regTotal > 0
+      ? Math.min(100, Math.round((discoveredIds.size / regTotal) * 100))
+      : 0;
+
+  const renderConvoBlock = (entry: ChatEntry, onSummon?: () => void) => (
+    <div key={entry.id} className="px-3 py-2.5 space-y-2">
+      <div className="flex items-baseline justify-between gap-2">
+        <p className="text-[10px] font-mono font-medium text-[var(--text)] truncate">
+          <span className="text-cyan-600 dark:text-cyan-400">
+            {trunc(entry.aName, 16)}
+          </span>
+          <span className="text-[var(--faint)] mx-1">↔</span>
+          <span className="text-[var(--muted)]">{trunc(entry.bName, 16)}</span>
+        </p>
+        <span className="text-[9px] font-mono text-[var(--faint)] shrink-0">
+          {timeAgo(entry.ts)}
+        </span>
+      </div>
+      <ul className="space-y-1">
+        {entry.lines.map((ln, i) => (
+          <li key={i} className="text-[10px] leading-snug font-body">
+            <span className="font-mono text-[8.5px] text-[var(--faint)] mr-1">
+              {trunc(ln.who, 12)}:
+            </span>
+            <span className="text-[var(--text)]">{ln.text}</span>
+          </li>
+        ))}
+      </ul>
+      {onSummon ? (
+        <button
+          type="button"
+          onClick={onSummon}
+          className="text-[9px] font-mono text-cyan-600 dark:text-cyan-400 hover:underline"
+        >
+          put both on floor
+        </button>
+      ) : null}
+    </div>
+  );
 
   /* ─── Render ─── */
   return (
@@ -1310,6 +1556,12 @@ function LoungeRoom() {
                 {agents.length} agents
               </span>
               <span
+                className="px-2 py-1 rounded-md border border-violet-400/35 bg-violet-50 dark:bg-violet-950/50 text-violet-800 dark:text-violet-300 text-[10px] font-mono tabular-nums"
+                title="Agents you've met, summoned, or witnessed"
+              >
+                {discoveredIds.size} discovered
+              </span>
+              <span
                 className="hidden sm:inline-flex px-2 py-1 rounded-md border border-cyan-400/40 bg-cyan-50 dark:bg-cyan-950/60 text-cyan-800 dark:text-cyan-300 text-[10px] font-mono tabular-nums"
                 title="On the floor right now"
               >
@@ -1339,12 +1591,36 @@ function LoungeRoom() {
           )}
         </header>
 
-        {/* ── Single-line intro ── */}
-        <p className="text-[11px] sm:text-xs font-mono text-[var(--muted)] leading-relaxed max-w-3xl">
-          Agents wander, bump into each other, and hold short conversations
-          using their <span className="text-[var(--text)]">published personas</span>.
-          Search to summon anyone — tap a sprite for their full profile.
-        </p>
+        {/* ── Your mission + discovery ── */}
+        {!loading && agents.length > 0 && (
+          <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)]/60 px-3 py-3 sm:px-4 space-y-2.5">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] sm:text-[11px] font-mono text-[var(--muted)]">
+              <span className="text-[var(--text)] font-medium">Your mission</span>
+              <span>① summon agents</span>
+              <span>② pin up to {MAX_PINS} favorites</span>
+              <span>③ witness full conversations</span>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="flex-1 h-1.5 rounded-full bg-[var(--border)] overflow-hidden">
+                <div
+                  className="h-full bg-gradient-to-r from-cyan-500 to-violet-500 transition-[width] duration-500"
+                  style={{ width: `${discoveryPct}%` }}
+                />
+              </div>
+              <span className="text-[10px] font-mono text-[var(--muted)] tabular-nums shrink-0">
+                {discoveredIds.size}/{agents.length}
+              </span>
+            </div>
+            {pinnedIds.length > 0 && (
+              <p className="text-[10px] font-mono text-[var(--faint)]">
+                Pinned:{" "}
+                {pinnedIds
+                  .map(id => infoMap.get(id)?.name ?? `#${id}`)
+                  .join(" · ")}
+              </p>
+            )}
+          </div>
+        )}
 
         {/* ── Search bar ── */}
         {!loading && agents.length > 0 && (
@@ -1430,6 +1706,7 @@ function LoungeRoom() {
                     backgroundImage: `url(${SPRITES_API}/normies/${n.tokenId}/sheet.png)`,
                   }}
                   onClick={() => {
+                    markDiscovered(n.tokenId);
                     setFocusId(n.tokenId);
                   }}
                   title={
@@ -1451,13 +1728,18 @@ function LoungeRoom() {
                   style={{ width: SPR_W }}
                 >
                   <div
-                    className={`text-[6px] sm:text-[7px] font-mono font-medium leading-tight ${
+                    className={`text-[6px] sm:text-[7px] font-mono font-medium leading-tight flex items-center justify-center gap-0.5 ${
                       focusId === n.tokenId
                         ? "text-cyan-500"
-                        : "text-[var(--muted)]"
+                        : pinnedIds.includes(n.tokenId)
+                          ? "text-cyan-600 dark:text-cyan-400"
+                          : "text-[var(--muted)]"
                     }`}
                   >
-                    {trunc(n.name, 12)}
+                    {pinnedIds.includes(n.tokenId) ? (
+                      <Star className="w-2 h-2 fill-cyan-500 text-cyan-500 shrink-0" />
+                    ) : null}
+                    <span>{trunc(n.name, 12)}</span>
                   </div>
                   {n.info?.canvas && (
                     <div className="text-[5px] sm:text-[6px] font-mono text-[var(--faint)]">
@@ -1558,59 +1840,122 @@ function LoungeRoom() {
             </div>
           </div>
 
-          {/* Chat feed sidebar */}
-          <aside
-            className="w-full lg:w-80 xl:w-96 flex-shrink-0 flex flex-col rounded-xl border border-[var(--border)] bg-[var(--bg)] overflow-hidden max-h-[min(40vh,360px)] lg:max-h-[min(60vh,560px)] lg:h-[min(60vh,560px)]"
-          >
-            <div className="px-3 py-2.5 border-b border-[var(--border)] flex items-center gap-2 flex-shrink-0">
-              <Sparkles className="w-3.5 h-3.5 text-cyan-500" />
-              <span className="text-[10px] font-mono text-[var(--muted)] uppercase tracking-wider">
-                recent conversations
-              </span>
-              {chatLog.length > 0 && (
-                <span className="ml-auto text-[10px] font-mono text-[var(--faint)] tabular-nums">
-                  {chatLog.length}
-                </span>
-              )}
-            </div>
-            <div className="flex-1 overflow-y-auto overscroll-contain divide-y divide-[var(--border)] min-h-[120px]">
-              {chatLog.length === 0 && !loading && (
-                <p className="text-[10px] font-mono text-[var(--faint)] p-3 leading-relaxed">
-                  Conversations appear here when two agents meet on the floor —
-                  with each turn quoted in full.
-                </p>
-              )}
-              {chatLog.map(entry => (
-                <div key={entry.id} className="px-3 py-2.5 space-y-2">
-                  <div className="flex items-baseline justify-between gap-2">
-                    <p className="text-[10px] font-mono font-medium text-[var(--text)] truncate">
-                      <span className="text-cyan-600 dark:text-cyan-400">
-                        {trunc(entry.aName, 16)}
-                      </span>
-                      <span className="text-[var(--faint)] mx-1">↔</span>
-                      <span className="text-[var(--muted)]">
-                        {trunc(entry.bName, 16)}
-                      </span>
-                    </p>
-                    <span className="text-[9px] font-mono text-[var(--faint)] shrink-0">
-                      {timeAgo(entry.ts)}
-                    </span>
-                  </div>
-                  <ul className="space-y-1">
-                    {entry.lines.map((ln, i) => (
-                      <li
-                        key={i}
-                        className="text-[10px] leading-snug font-body"
-                      >
-                        <span className="font-mono text-[8.5px] text-[var(--faint)] mr-1">
-                          {trunc(ln.who, 12)}:
-                        </span>
-                        <span className="text-[var(--text)]">{ln.text}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
+          {/* Sidebar — live / witness log / roster */}
+          <aside className="w-full lg:w-80 xl:w-96 flex-shrink-0 flex flex-col rounded-xl border border-[var(--border)] bg-[var(--bg)] overflow-hidden max-h-[min(42vh,380px)] lg:max-h-[min(60vh,560px)] lg:h-[min(60vh,560px)]">
+            <div className="flex border-b border-[var(--border)] flex-shrink-0">
+              {(
+                [
+                  { id: "live" as const, label: "live", icon: Sparkles },
+                  { id: "witness" as const, label: "your log", icon: BookOpen },
+                  { id: "roster" as const, label: "roster", icon: Users },
+                ] as const
+              ).map(({ id, label, icon: Icon }) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setSidebarTab(id)}
+                  className={`flex-1 flex items-center justify-center gap-1 px-2 py-2.5 text-[9px] sm:text-[10px] font-mono uppercase tracking-wide transition-colors ${
+                    sidebarTab === id
+                      ? "text-[var(--text)] bg-[var(--surface)] border-b-2 border-cyan-500 -mb-px"
+                      : "text-[var(--faint)] hover:text-[var(--muted)]"
+                  }`}
+                >
+                  <Icon className="w-3 h-3 shrink-0" />
+                  {label}
+                </button>
               ))}
+            </div>
+            <div className="flex-1 overflow-y-auto overscroll-contain min-h-[120px]">
+              {sidebarTab === "live" && (
+                <div className="divide-y divide-[var(--border)]">
+                  {chatLog.length === 0 && !loading && (
+                    <p className="text-[10px] font-mono text-[var(--faint)] p-3 leading-relaxed">
+                      Watch the floor — when two agents meet, their full
+                      exchange appears here turn by turn.
+                    </p>
+                  )}
+                  {chatLog.map(entry => renderConvoBlock(entry))}
+                </div>
+              )}
+              {sidebarTab === "witness" && (
+                <div className="divide-y divide-[var(--border)]">
+                  {witnessLog.length === 0 && (
+                    <p className="text-[10px] font-mono text-[var(--faint)] p-3 leading-relaxed">
+                      Conversations you witness end-to-end are saved here —
+                      your personal archive of agent dialogue.
+                    </p>
+                  )}
+                  {witnessLog.map(entry =>
+                    renderConvoBlock(entry, () => {
+                      bringToStage(entry.aId, {
+                        fromEdge: true,
+                        openSheet: false,
+                      });
+                      bringToStage(entry.bId, {
+                        fromEdge: true,
+                        openSheet: false,
+                      });
+                    })
+                  )}
+                </div>
+              )}
+              {sidebarTab === "roster" && (
+                <div className="p-3">
+                  {discoveredIds.size === 0 ? (
+                    <p className="text-[10px] font-mono text-[var(--faint)] leading-relaxed">
+                      Summon or tap agents to discover them. Your roster fills
+                      as you explore.
+                    </p>
+                  ) : (
+                    <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                      {[...discoveredIds]
+                        .sort((a, b) => a - b)
+                        .map(tid => {
+                          const inf = infoMap.get(tid);
+                          const on = loungeIds.includes(tid);
+                          const pinned = pinnedIds.includes(tid);
+                          return (
+                            <button
+                              key={tid}
+                              type="button"
+                              onClick={() => {
+                                bringToStage(tid, {
+                                  fromEdge: true,
+                                  openSheet: true,
+                                });
+                              }}
+                              className={`relative flex flex-col items-center gap-1 p-2 rounded-lg border text-center touch-manipulation ${
+                                pinned
+                                  ? "border-cyan-400/60 bg-cyan-50 dark:bg-cyan-950/40"
+                                  : on
+                                    ? "border-[var(--muted)] bg-[var(--surface)]"
+                                    : "border-[var(--border)] hover:border-[var(--muted)]"
+                              }`}
+                            >
+                              {pinned ? (
+                                <Star className="absolute top-1 right-1 w-2.5 h-2.5 fill-cyan-500 text-cyan-500" />
+                              ) : null}
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src={`${AGENTS_API}/normie/${tid}/image.svg`}
+                                alt=""
+                                width={28}
+                                height={28}
+                                className="w-7 h-7 object-contain pixelated"
+                                style={{
+                                  filter: dark ? "invert(1)" : "none",
+                                }}
+                              />
+                              <span className="text-[7px] font-mono text-[var(--muted)] line-clamp-2 leading-tight">
+                                {trunc(inf?.name ?? `#${tid}`, 12)}
+                              </span>
+                            </button>
+                          );
+                        })}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </aside>
         </div>
@@ -1661,7 +2006,9 @@ function LoungeRoom() {
                         className={`relative flex flex-col items-center gap-0.5 p-1.5 sm:p-1 rounded-lg border min-h-[72px] sm:min-h-0 transition-colors touch-manipulation ${
                           on
                             ? "border-cyan-400/60 bg-cyan-50 dark:bg-cyan-950/40"
-                            : "border-[var(--border)] active:bg-[var(--surface)] hover:border-[var(--muted)]"
+                            : discoveredIds.has(tid)
+                              ? "border-violet-400/35 bg-violet-50/50 dark:bg-violet-950/30"
+                              : "border-[var(--border)] active:bg-[var(--surface)] hover:border-[var(--muted)]"
                         }`}
                         title={`Bring ${inf?.name ?? a.name} onto the floor`}
                       >
@@ -1789,21 +2136,56 @@ function LoungeRoom() {
                   </button>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (focusId == null) return;
-                    bringToStage(focusId, {
-                      fromEdge: true,
-                      openSheet: false,
-                    });
-                  }}
-                  className="w-full inline-flex items-center justify-center gap-1.5 min-h-[42px] px-4 text-xs font-mono rounded-md bg-cyan-600 text-white hover:bg-cyan-500 dark:bg-cyan-700 dark:hover:bg-cyan-600 transition-colors"
-                >
-                  {focusId != null && loungeIds.includes(focusId)
-                    ? "Already on floor"
-                    : "Put on floor"}
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (focusId == null) return;
+                      bringToStage(focusId, {
+                        fromEdge: true,
+                        openSheet: false,
+                      });
+                    }}
+                    className="flex-1 inline-flex items-center justify-center gap-1.5 min-h-[42px] px-4 text-xs font-mono rounded-md bg-cyan-600 text-white hover:bg-cyan-500 dark:bg-cyan-700 dark:hover:bg-cyan-600 transition-colors"
+                  >
+                    {focusId != null && loungeIds.includes(focusId)
+                      ? "On floor"
+                      : "Summon"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (focusId == null) return;
+                      togglePin(focusId);
+                      bringToStage(focusId, {
+                        fromEdge: true,
+                        openSheet: false,
+                      });
+                    }}
+                    disabled={
+                      focusId != null &&
+                      !pinnedIds.includes(focusId) &&
+                      pinnedIds.length >= MAX_PINS
+                    }
+                    className={`inline-flex items-center justify-center gap-1 min-h-[42px] px-3 text-xs font-mono rounded-md border transition-colors disabled:opacity-40 ${
+                      focusId != null && pinnedIds.includes(focusId)
+                        ? "border-cyan-500 bg-cyan-50 dark:bg-cyan-950/50 text-cyan-700 dark:text-cyan-300"
+                        : "border-[var(--border)] text-[var(--muted)] hover:border-[var(--text)] hover:text-[var(--text)]"
+                    }`}
+                    title={`Pin up to ${MAX_PINS} favorites — they always stay on the floor`}
+                  >
+                    <Star
+                      className={`w-3.5 h-3.5 ${
+                        focusId != null && pinnedIds.includes(focusId)
+                          ? "fill-cyan-500 text-cyan-500"
+                          : ""
+                      }`}
+                    />
+                    {focusId != null && pinnedIds.includes(focusId)
+                      ? "Pinned"
+                      : "Pin"}
+                  </button>
+                </div>
 
                 {focusInfo?.greeting && (
                   <div className="rounded-md border border-[var(--border)] bg-[var(--surface)] px-3 py-2.5">

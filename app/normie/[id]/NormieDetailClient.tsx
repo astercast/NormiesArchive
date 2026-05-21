@@ -61,6 +61,8 @@ export default function NormieDetailClient({ tokenId }: Props) {
   const [soundOn,        setSoundOn]        = useState(false);
   const [isExporting,    setIsExporting]    = useState(false);
   const [exportPct,      setExportPct]      = useState(0);
+  const [isExportingLatest, setIsExportingLatest] = useState(false);
+  const [exportLatestPct,   setExportLatestPct]   = useState(0);
   const [copied,         setCopied]         = useState(false);
   const [particles,      setParticles]      = useState<{ added: number[]; removed: number[] }>({ added: [], removed: [] });
   const [isInThe100,     setIsInThe100]     = useState(false);
@@ -188,6 +190,28 @@ export default function NormieDetailClient({ tokenId }: Props) {
     }
   }, [frames, tokenId, isExporting]);
 
+  const handleExportLatest = useCallback(async () => {
+    if (!originalPixels || !currentPixels || isExportingLatest) return;
+    setIsExportingLatest(true);
+    setExportLatestPct(0);
+    try {
+      const { exportLatestStyleGif } = await import("@/lib/gifExport");
+      await exportLatestStyleGif(
+        originalPixels,
+        currentPixels,
+        editHistory,
+        tokenId,
+        8,
+        setExportLatestPct
+      );
+    } catch (err) {
+      console.error("Latest-style export failed:", err);
+    } finally {
+      setIsExportingLatest(false);
+      setExportLatestPct(0);
+    }
+  }, [originalPixels, currentPixels, editHistory, tokenId, isExportingLatest]);
+
   const handleShare = useCallback(() => {
     navigator.clipboard.writeText(window.location.href);
     setCopied(true);
@@ -309,11 +333,18 @@ export default function NormieDetailClient({ tokenId }: Props) {
             className="px-2.5 py-1.5 border border-n-border text-n-muted text-xs font-mono rounded hover:text-n-text hover:border-n-text transition-colors flex items-center gap-1">
             <Share2 className="w-3 h-3" /> {copied ? "copied!" : "share"}
           </button>
-          <button onClick={handleExport} disabled={isExporting || frames.length < 2}
+          <button onClick={handleExport} disabled={isExporting || isExportingLatest || frames.length < 2}
             className="px-2.5 py-1.5 bg-n-text text-n-bg text-xs font-mono rounded hover:opacity-80 transition-opacity disabled:opacity-40 flex items-center gap-1">
             {isExporting
               ? <><Loader2 className="w-3 h-3 animate-spin" /> {Math.round(exportPct * 100)}%</>
               : <><Download className="w-3 h-3" /> export gif</>}
+          </button>
+          <button onClick={handleExportLatest} disabled={isExporting || isExportingLatest || !originalPixels || !currentPixels}
+            className="px-2.5 py-1.5 border border-n-border text-n-muted text-xs font-mono rounded hover:text-n-text hover:border-n-text transition-colors disabled:opacity-40 flex items-center gap-1"
+            title="Origin → latest loop, same style as the Latest Works page">
+            {isExportingLatest
+              ? <><Loader2 className="w-3 h-3 animate-spin" /> {Math.round(exportLatestPct * 100)}%</>
+              : <><Download className="w-3 h-3" /> latest style gif</>}
           </button>
         </div>
       </div>
