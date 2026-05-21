@@ -199,7 +199,6 @@ export default function NormieDetailClient({ tokenId }: Props) {
       await exportLatestStyleGif(
         originalPixels,
         currentPixels,
-        editHistory,
         tokenId,
         8,
         setExportLatestPct
@@ -210,7 +209,7 @@ export default function NormieDetailClient({ tokenId }: Props) {
       setIsExportingLatest(false);
       setExportLatestPct(0);
     }
-  }, [originalPixels, currentPixels, editHistory, tokenId, isExportingLatest]);
+  }, [originalPixels, currentPixels, tokenId, isExportingLatest]);
 
   const handleShare = useCallback(() => {
     navigator.clipboard.writeText(window.location.href);
@@ -334,14 +333,15 @@ export default function NormieDetailClient({ tokenId }: Props) {
             <Share2 className="w-3 h-3" /> {copied ? "copied!" : "share"}
           </button>
           <button onClick={handleExport} disabled={isExporting || isExportingLatest || frames.length < 2}
-            className="px-2.5 py-1.5 bg-n-text text-n-bg text-xs font-mono rounded hover:opacity-80 transition-opacity disabled:opacity-40 flex items-center gap-1">
+            className="px-2.5 py-1.5 border border-n-border text-n-muted text-xs font-mono rounded hover:text-n-text hover:border-n-text transition-colors disabled:opacity-40 flex items-center gap-1"
+            title="Full pixel evolution timeline">
             {isExporting
               ? <><Loader2 className="w-3 h-3 animate-spin" /> {Math.round(exportPct * 100)}%</>
               : <><Download className="w-3 h-3" /> export gif</>}
           </button>
           <button onClick={handleExportLatest} disabled={isExporting || isExportingLatest || !originalPixels || !currentPixels}
             className="px-2.5 py-1.5 border border-n-border text-n-muted text-xs font-mono rounded hover:text-n-text hover:border-n-text transition-colors disabled:opacity-40 flex items-center gap-1"
-            title="Origin → latest loop, same style as the Latest Works page">
+            title="Two-frame GIF: original mint, then current look">
             {isExportingLatest
               ? <><Loader2 className="w-3 h-3 animate-spin" /> {Math.round(exportLatestPct * 100)}%</>
               : <><Download className="w-3 h-3" /> latest style gif</>}

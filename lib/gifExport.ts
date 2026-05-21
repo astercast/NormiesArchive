@@ -1,6 +1,6 @@
 "use client";
 
-import { renderToCanvas, GRID_SIZE, buildSimulatedFrames } from "./pixelUtils";
+import { renderToCanvas, GRID_SIZE } from "./pixelUtils";
 
 // Load GIF.js from CDN
 let gifJsPromise: Promise<any> | null = null;
@@ -110,25 +110,22 @@ export async function exportTimelineGif(
   }
 }
 
-/** Same animation as the Latest Works hero — simulated origin→latest frames, 350ms steps. */
+/** Origin → latest only (2 frames), same pacing feel as Latest Works hero. */
 export async function exportLatestStyleGif(
   originalStr: string,
   currentStr: string,
-  editHistory: Array<{ changeCount: number }>,
   tokenId: number,
   scale: number = 8,
   onProgress?: (progress: number) => void
 ): Promise<void> {
   if (!originalStr || !currentStr) return;
-  const frames = buildSimulatedFrames(originalStr, currentStr, editHistory);
-  if (frames.length < 2) return;
+  const frames = [originalStr, currentStr];
 
   const size = GRID_SIZE * scale;
   const offscreen = document.createElement("canvas");
   offscreen.width = size;
   offscreen.height = size;
   const ctx = offscreen.getContext("2d")!;
-  const LATEST_FRAME_MS = 350;
 
   try {
     const [GIF, workerScript] = await Promise.all([loadGifJs(), getWorkerBlobUrl()]);
@@ -153,8 +150,7 @@ export async function exportLatestStyleGif(
       ctx.fillText(wmText, size - 3, 3);
       ctx.textBaseline = "alphabetic";
 
-      const delay =
-        i === 0 ? 800 : i === frames.length - 1 ? 1200 : LATEST_FRAME_MS;
+      const delay = i === 0 ? 800 : 1200;
       gif.addFrame(ctx, { delay, copy: true });
       onProgress?.((i + 0.5) / frames.length);
     }
