@@ -143,16 +143,6 @@ function trunc(s: string, n: number) {
   return s.length > n ? s.slice(0, n - 1) + "…" : s;
 }
 
-function firstSentence(s: string): string {
-  const m = s.trim().match(/^[\s\S]+?[.!?](?=\s|$)/);
-  return (m ? m[0] : s.trim()).trim();
-}
-
-function lc(s: string): string {
-  const t = s.trim();
-  return t.charAt(0).toLowerCase() + t.slice(1);
-}
-
 function timeAgo(ts: number): string {
   const s = Math.round((Date.now() - ts) / 1000);
   if (s < 10) return "just now";
@@ -169,125 +159,256 @@ function computeStageCap(innerWidth: number): number {
   return 12;
 }
 
-/* ─── Dialogue line builders — natural English from persona text ──────── */
-function cleanText(s: string): string {
-  return s
+/* ─── Voice corpus & dialogue engine ──────────────────────────────────── */
+/**
+ * Every line an agent speaks comes from their own published persona text.
+ * We never stitch templates around their name — we surface the sentences
+ * they actually wrote, picking the most evocative one for each turn while
+ * tracking what's already been said so a single conversation never repeats.
+ *
+ * Sources, in order of preference:
+ *   greeting           → literal opening line (used for hellos)
+ *   tagline            → catchphrase (used for closes / asides)
+ *   backstory          → mined sentence-by-sentence for self-reveals
+ *   systemPrompt       → narrative sentences only (no imperatives to the LLM)
+ *   communicationStyle → fallback self-reveal
+ *   quirks             → behavioural asides
+ *   personalityTraits  → tiny self-description if no prose exists
+ */
+interface Voice {
+  name: string;
+  type: string;
+  greeting: string;
+  tagline: string;
+  style: string;
+  traits: string[];
+  quirks: string[];
+  selfLines: string[];
+}
+
+const SENTENCE_SPLIT = /(?<=[.!?…])\s+(?=[A-Z"'(\[])/;
+const IMPERATIVE_RE =
+  /^(speak|don'?t|do not|avoid|never|always|be |become|remember|note|do |when |if |try |use |make |keep |stay |feel |think |consider )/i;
+const SECOND_PERSON_RE = /\byou\s+(are|will|must|should|can|never|always)\b/i;
+
+function splitSentences(text: string): string[] {
+  if (!text) return [];
+  return text
     .replace(/\s+/g, " ")
-    .replace(/[.!?]+$/, "")
-    .trim();
+    .trim()
+    .split(SENTENCE_SPLIT)
+    .map(s => s.trim())
+    .filter(Boolean);
 }
 
-function buildOpener(self?: AgentInfo, other?: AgentInfo): string {
-  const otherName = other?.name?.trim();
-  if (self?.greeting?.trim()) {
-    let g = cleanText(self.greeting);
-    // Personalize a generic greeting if it doesn't already mention the other
-    if (otherName && !g.toLowerCase().includes(otherName.toLowerCase())) {
-      g = `${g}, ${otherName}`;
+function clip(text: string, max = 180): string {
+  const s = text.trim().replace(/\s+/g, " ");
+  if (s.length <= max) return s;
+  const cut = s.slice(0, max - 1);
+  const sp = cut.lastIndexOf(" ");
+  return (sp > max - 40 ? cut.slice(0, sp) : cut) + "…";
+}
+
+function ensurePunct(s: string): string {
+  const t = s.trim();
+  if (!t) return "";
+  return /[.!?…]$/.test(t) ? t : t + ".";
+}
+
+function buildVoice(info?: AgentInfo): Voice {
+  if (!info) {
+    return {
+      name: "",
+      type: "",
+      greeting: "",
+      tagline: "",
+      style: "",
+      traits: [],
+      quirks: [],
+      selfLines: [],
+    };
+  }
+  const greeting = (info.greeting ?? "").trim();
+  const tagline = (info.tagline ?? "").trim();
+  const style = (info.communicationStyle ?? "").trim();
+  const traits = (info.personalityTraits ?? [])
+    .map(s => (s ?? "").trim())
+    .filter(Boolean);
+  const quirks = (info.quirks ?? [])
+    .map(s => (s ?? "").trim())
+    .filter(Boolean);
+
+  // Backstory sentences read as authentic self-narrative.
+  const backstoryLines = splitSentences(info.backstory ?? "").filter(
+    s => s.length >= 12 && s.length <= 220
+  );
+
+  // System-prompt sentences, but only narrative ones (skip imperatives
+  // directed at the LLM like "Speak softly." or "Avoid mentioning X.").
+  const promptLines = splitSentences(info.systemPrompt ?? "")
+    .filter(s => s.length >= 14 && s.length <= 220)
+    .filter(s => !IMPERATIVE_RE.test(s))
+    .filter(s => !SECOND_PERSON_RE.test(s));
+
+  // De-duplicate while preserving order: backstory first (richest source),
+  // then prompt narrative, then comm-style as a final self-reveal option.
+  const selfLines: string[] = [];
+  const seen = new Set<string>();
+  const push = (line: string) => {
+    const k = line.toLowerCase();
+    if (!seen.has(k) && line) {
+      seen.add(k);
+      selfLines.push(line);
     }
-    return `${g}.`;
-  }
-  const me = self?.name?.trim() ?? "Hello";
-  if (self?.tagline?.trim()) {
-    return `${me} here. ${cleanText(self.tagline)}.`;
-  }
-  return otherName ? `Hi, ${otherName}. I'm ${me}.` : `Hello there. I'm ${me}.`;
+  };
+  backstoryLines.forEach(push);
+  promptLines.forEach(push);
+  if (style) push(style);
+
+  return {
+    name: (info.name ?? "").trim(),
+    type: info.type ?? "",
+    greeting,
+    tagline,
+    style,
+    traits,
+    quirks,
+    selfLines,
+  };
 }
 
-function buildAck(self?: AgentInfo, other?: AgentInfo): string {
-  const me = self?.name?.trim() ?? "Hi";
-  const them = other?.name?.trim() ?? "stranger";
-  const back = self?.backstory?.trim();
-  if (back) {
-    return `Pleasure, ${them}. ${firstSentence(back)}`;
-  }
-  const traits = (self?.personalityTraits ?? [])
-    .filter(Boolean)
-    .slice(0, 2)
-    .map(t => t.toLowerCase())
-    .join(" and ");
-  if (traits) {
-    return `Pleasure, ${them}. I'm ${me} — ${traits}, mostly.`;
-  }
-  if (self?.tagline?.trim()) {
-    return `${cleanText(self.tagline)}. That's my line, anyway.`;
-  }
-  return `Likewise, ${them}. ${me}.`;
+interface TurnCtx {
+  voice: Voice;
+  partner: Voice;
+  used: Set<string>;
+  salt: number;
 }
 
-function buildElaborate(
-  self?: AgentInfo,
-  _other?: AgentInfo,
-  salt = 0
-): string {
-  if (self?.communicationStyle?.trim()) {
-    const cs = firstSentence(self.communicationStyle);
-    return `Fair warning — ${lc(cs)}.`;
-  }
-  const quirks = self?.quirks?.filter(Boolean) ?? [];
-  if (quirks.length) {
-    const q =
-      quirks[stableHash(`${self?.tokenId ?? ""}|q|${salt}`) % quirks.length];
-    return `I should mention, I tend to ${lc(cleanText(q))}.`;
-  }
-  if (self?.type && self.type !== "Human") {
-    return `By the way — yes, I'm a ${self.type.toLowerCase()}.`;
-  }
-  if (self?.backstory?.trim()) {
-    return `If I'm honest, ${lc(firstSentence(self.backstory))}.`;
-  }
-  return `So… what brings you to the lounge?`;
+function lineKey(s: string): string {
+  return s.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
-function buildObserve(
-  self?: AgentInfo,
-  other?: AgentInfo,
-  salt = 0
-): string {
-  if (other?.type && other.type !== "Human") {
-    return `An ${other.type.toLowerCase()}? Don't bump into many of you out here.`;
-  }
-  const selfTraits = (self?.personalityTraits ?? []).map(s => s.toLowerCase());
-  const otherTraits = (other?.personalityTraits ?? []).map(s => s.toLowerCase());
-  const shared = selfTraits.find(t => otherTraits.includes(t));
-  if (shared) {
-    return `Both ${shared}, looks like. Kindred wiring.`;
-  }
-  const quirks = self?.quirks?.filter(Boolean) ?? [];
-  if (quirks.length > 1) {
-    const q = quirks[1];
-    return `One more habit of mine — ${lc(cleanText(q))}.`;
-  }
-  if (quirks.length === 1) {
-    return `And I'd add — ${lc(cleanText(quirks[0]))}.`;
-  }
-  if (self?.communicationStyle?.trim()) {
-    return cleanText(self.communicationStyle) + ".";
-  }
-  const fallbacks = [
-    "Strange world, isn't it.",
-    "Always interesting on the floor.",
-    "Good day for it, anyway.",
-  ];
-  return fallbacks[stableHash(`${self?.tokenId ?? ""}|obs|${salt}`) % fallbacks.length];
+function take(used: Set<string>, line: string): string {
+  used.add(lineKey(line));
+  return line;
 }
 
-function buildClose(
-  self?: AgentInfo,
-  other?: AgentInfo,
-  salt = 0
-): string {
-  const them = other?.name?.trim() ?? "friend";
-  const tagline = self?.tagline?.trim();
-  const choices = [
-    `Catch you wandering, ${them}.`,
-    `Until next time.`,
-    `Take care, ${them}.`,
-    tagline ? `${cleanText(tagline)}. Bye for now.` : `Bye for now.`,
-  ];
-  return choices[
-    stableHash(`${self?.tokenId ?? ""}|close|${salt}`) % choices.length
-  ];
+function isUsed(used: Set<string>, line: string): boolean {
+  return used.has(lineKey(line));
+}
+
+/** Deterministically pick the first un-used line from a pool. */
+function pickFresh(
+  pool: string[],
+  used: Set<string>,
+  seed: string
+): string | null {
+  if (!pool.length) return null;
+  const ranked = [...pool].sort(
+    (a, b) =>
+      stableHash(seed + "|" + a) - stableHash(seed + "|" + b)
+  );
+  for (const line of ranked) {
+    if (!isUsed(used, line)) return line;
+  }
+  return null;
+}
+
+/** A opens — use their literal greeting if they have one. */
+function turnOpen(ctx: TurnCtx): string {
+  const { voice, partner, used, salt } = ctx;
+  if (voice.greeting && !isUsed(used, voice.greeting)) {
+    return take(used, ensurePunct(clip(voice.greeting)));
+  }
+  if (voice.tagline && !isUsed(used, voice.tagline)) {
+    const line = ensurePunct(clip(voice.tagline));
+    return take(used, partner.name ? `${partner.name}. ${line}` : line);
+  }
+  const self = pickFresh(voice.selfLines, used, `${voice.name}|o|${salt}`);
+  if (self) return take(used, ensurePunct(clip(self)));
+  if (partner.name) return take(used, `…${partner.name}.`);
+  if (voice.name) return take(used, `${voice.name}.`);
+  return take(used, "…");
+}
+
+/** B greets back — also use their own greeting if available. */
+function turnReply(ctx: TurnCtx): string {
+  const { voice, partner, used, salt } = ctx;
+  if (voice.greeting && !isUsed(used, voice.greeting)) {
+    return take(used, ensurePunct(clip(voice.greeting)));
+  }
+  // Else acknowledge the partner with a self-line.
+  const self = pickFresh(voice.selfLines, used, `${voice.name}|r|${salt}`);
+  if (self) {
+    const body = clip(self, 150);
+    const out = partner.name ? `${partner.name} — ${body}` : body;
+    return take(used, ensurePunct(out));
+  }
+  if (voice.tagline && !isUsed(used, voice.tagline)) {
+    return take(used, ensurePunct(clip(voice.tagline)));
+  }
+  if (voice.traits.length >= 2) {
+    const ts = voice.traits.slice(0, 2).map(t => t.toLowerCase());
+    return take(used, `${ts[0]} and ${ts[1]}, mostly. That's me.`);
+  }
+  if (voice.name) return take(used, partner.name ? `Hi, ${partner.name}.` : `${voice.name}.`);
+  return take(used, "Hello.");
+}
+
+/** A reveals something authentic about themselves. */
+function turnSelf(ctx: TurnCtx): string {
+  const { voice, used, salt } = ctx;
+  const self = pickFresh(voice.selfLines, used, `${voice.name}|s|${salt}`);
+  if (self) return take(used, ensurePunct(clip(self)));
+  if (voice.traits.length >= 3) {
+    const ts = voice.traits.slice(0, 3).map(t => t.toLowerCase());
+    return take(
+      used,
+      `${ts[0]}, ${ts[1]}, ${ts[2]} — that's about the shape of me.`
+    );
+  }
+  if (voice.traits.length === 2) {
+    const ts = voice.traits.map(t => t.toLowerCase());
+    return take(used, `${ts[0]} and ${ts[1]} — that's about it.`);
+  }
+  if (voice.traits.length === 1) {
+    return take(used, `${voice.traits[0].toLowerCase()}, mostly.`);
+  }
+  if (voice.tagline && !isUsed(used, voice.tagline)) {
+    return take(used, ensurePunct(clip(voice.tagline)));
+  }
+  return take(used, "…");
+}
+
+/** B shares a quirk or another self-line — a candid aside. */
+function turnAside(ctx: TurnCtx): string {
+  const { voice, used, salt } = ctx;
+  const quirk = pickFresh(voice.quirks, used, `${voice.name}|q|${salt}`);
+  if (quirk) return take(used, ensurePunct(clip(quirk)));
+  const self = pickFresh(voice.selfLines, used, `${voice.name}|s2|${salt}`);
+  if (self) return take(used, ensurePunct(clip(self)));
+  if (voice.style && !isUsed(used, voice.style)) {
+    return take(used, ensurePunct(clip(voice.style)));
+  }
+  if (voice.tagline && !isUsed(used, voice.tagline)) {
+    return take(used, ensurePunct(clip(voice.tagline)));
+  }
+  return take(used, "…");
+}
+
+/** A closes with their tagline — their signature parting line. */
+function turnClose(ctx: TurnCtx): string {
+  const { voice, partner, used, salt } = ctx;
+  if (voice.tagline && !isUsed(used, voice.tagline)) {
+    return take(used, ensurePunct(clip(voice.tagline)));
+  }
+  const self = pickFresh(voice.selfLines, used, `${voice.name}|c|${salt}`);
+  if (self) return take(used, ensurePunct(clip(self)));
+  if (voice.greeting && !isUsed(used, voice.greeting)) {
+    return take(used, ensurePunct(clip(voice.greeting)));
+  }
+  if (partner.name) return take(used, `Walk well, ${partner.name}.`);
+  return take(used, "Walk well.");
 }
 
 function buildScript(
@@ -297,12 +418,17 @@ function buildScript(
   infoB: AgentInfo | undefined,
   salt: number
 ): ConvoTurn[] {
+  const va = buildVoice(infoA);
+  const vb = buildVoice(infoB);
+  const used = new Set<string>();
+  const ctxA: TurnCtx = { voice: va, partner: vb, used, salt };
+  const ctxB: TurnCtx = { voice: vb, partner: va, used, salt };
   return [
-    { speakerId: idA, text: buildOpener(infoA, infoB) },
-    { speakerId: idB, text: buildAck(infoB, infoA) },
-    { speakerId: idA, text: buildElaborate(infoA, infoB, salt) },
-    { speakerId: idB, text: buildObserve(infoB, infoA, salt) },
-    { speakerId: idA, text: buildClose(infoA, infoB, salt) },
+    { speakerId: idA, text: turnOpen(ctxA) },
+    { speakerId: idB, text: turnReply(ctxB) },
+    { speakerId: idA, text: turnSelf(ctxA) },
+    { speakerId: idB, text: turnAside(ctxB) },
+    { speakerId: idA, text: turnClose(ctxA) },
   ];
 }
 
@@ -1357,12 +1483,12 @@ function LoungeRoom() {
               <AnimatePresence>
                 {bubbles.map(b => {
                   const cw = stageW;
-                  const bw = Math.min(132, cw - 12);
+                  const bw = Math.min(160, cw - 12);
                   const left = Math.max(
                     4,
                     Math.min(b.x - bw / 2, cw - bw - 4)
                   );
-                  const top = Math.max(2, b.y - 56);
+                  const top = Math.max(2, b.y - 60);
                   return (
                     <motion.div
                       key={b.id}
@@ -1390,7 +1516,7 @@ function LoungeRoom() {
                             {trunc(b.name, 12)}
                           </span>
                         </p>
-                        <p className="font-body text-[8.5px] sm:text-[9px] text-[var(--text)] leading-snug break-words line-clamp-4">
+                        <p className="font-body text-[8.5px] sm:text-[9px] text-[var(--text)] leading-snug break-words line-clamp-5">
                           {b.text}
                         </p>
                       </div>
