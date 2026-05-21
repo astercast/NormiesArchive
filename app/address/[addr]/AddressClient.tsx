@@ -1,11 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { isAddress } from "viem";
 import { Copy, Check, ExternalLink, Loader2, AlertCircle, Zap, Trophy, Palette, Star, Flame, Grid2x2 } from "lucide-react";
 import type { WalletNormie } from "@/app/api/address/[addr]/route";
+import WalletSortBar from "@/components/WalletSortBar";
+import { sortWalletNormies, type WalletSortKey } from "@/lib/walletSort";
 
 const BASE_IMG = "https://api.normies.art";
 
@@ -146,6 +148,7 @@ interface Props { addr: string }
 
 export default function AddressClient({ addr }: Props) {
   const [copied, setCopied] = useState(false);
+  const [sortKey, setSortKey] = useState<WalletSortKey>("ap");
 
   const validAddr = isAddress(addr);
   const short     = validAddr ? `${addr.slice(0, 6)}…${addr.slice(-4)}` : addr;
@@ -182,9 +185,13 @@ export default function AddressClient({ addr }: Props) {
     );
   }
 
-  // top 3 by AP for spotlight, rest for main grid
-  const spotlight = data?.normies.slice(0, 3) ?? [];
-  const rest      = data?.normies.slice(3) ?? [];
+  const sortedNormies = useMemo(
+    () => (data ? sortWalletNormies(data.normies, sortKey) : []),
+    [data, sortKey]
+  );
+
+  const spotlight = sortedNormies.slice(0, 3);
+  const rest = sortedNormies.slice(3);
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-10 space-y-10">
@@ -258,13 +265,17 @@ export default function AddressClient({ addr }: Props) {
       )}
 
       {/* Empty */}
-      {data && data.normies.length === 0 && (
+      {data && sortedNormies.length === 0 && (
         <div className="text-center py-16 text-n-faint font-mono text-sm border border-n-border rounded-lg">
           no normies owned by this address
         </div>
       )}
 
-      {/* Spotlight — top 3 */}
+      {data && sortedNormies.length > 0 && (
+        <WalletSortBar value={sortKey} onChange={setSortKey} />
+      )}
+
+      {/* Spotlight — top 3 for current sort */}
       {data && spotlight.length > 0 && (
         <div className="space-y-3">
           <div className="flex items-center justify-between">
@@ -284,7 +295,7 @@ export default function AddressClient({ addr }: Props) {
       {/* Full grid */}
       {data && rest.length > 0 && (
         <div className="space-y-3">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
             <span className="text-xs font-mono text-n-muted uppercase tracking-widest">
               all {data.totalOwned} normie{data.totalOwned !== 1 ? "s" : ""}
               {data.the100Count > 0 && (
@@ -295,15 +306,15 @@ export default function AddressClient({ addr }: Props) {
             </span>
           </div>
           <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10 gap-2">
-            {data.normies.map(n => (
+            {rest.map(n => (
               <NormieCard key={n.tokenId} n={n} />
             ))}
           </div>
         </div>
       )}
 
-      {/* If only ≤3 normies, still show the full grid label */}
-      {data && data.normies.length > 0 && rest.length === 0 && (
+      {/* If only ≤3 normies */}
+      {data && sortedNormies.length > 0 && rest.length === 0 && (
         <div className="text-xs font-mono text-n-faint text-center pt-2">
           showing all {data.totalOwned} normie{data.totalOwned !== 1 ? "s" : ""}
         </div>

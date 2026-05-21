@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { isAddress } from "viem";
@@ -8,6 +9,8 @@ import {
   Loader2, AlertCircle, ExternalLink,
 } from "lucide-react";
 import type { WalletNormie } from "@/app/api/address/[addr]/route";
+import WalletSortBar from "@/components/WalletSortBar";
+import { sortWalletNormies, type WalletSortKey } from "@/lib/walletSort";
 
 const BASE_IMG = "https://api.normies.art";
 
@@ -120,6 +123,7 @@ interface Props { addrs: string[] }
 
 export default function AddressesClient({ addrs }: Props) {
   const validAddrs = addrs.filter(a => isAddress(a));
+  const [sortKey, setSortKey] = useState<WalletSortKey>("ap");
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ["addresses", [...validAddrs].sort().join(",")],
@@ -137,11 +141,13 @@ export default function AddressesClient({ addrs }: Props) {
       const seen = new Set<number>();
       const allNormies: WalletNormie[] = [];
       for (const r of results) {
-        for (const n of (r.normies ?? [])) {
-          if (!seen.has(n.tokenId)) { seen.add(n.tokenId); allNormies.push(n); }
+        for (const n of r.normies ?? []) {
+          if (!seen.has(n.tokenId)) {
+            seen.add(n.tokenId);
+            allNormies.push(n);
+          }
         }
       }
-      allNormies.sort((a, b) => b.ap - a.ap || b.level - a.level || a.tokenId - b.tokenId);
 
       return {
         normies:         allNormies,
@@ -157,6 +163,11 @@ export default function AddressesClient({ addrs }: Props) {
     staleTime: 60_000,
     retry: 1,
   });
+
+  const sortedNormies = useMemo(
+    () => (data ? sortWalletNormies(data.normies, sortKey) : []),
+    [data, sortKey]
+  );
 
   if (validAddrs.length === 0) {
     return (
@@ -218,23 +229,23 @@ export default function AddressesClient({ addrs }: Props) {
       )}
 
       {/* Empty */}
-      {data && data.normies.length === 0 && (
+      {data && sortedNormies.length === 0 && (
         <div className="text-center py-16 text-n-faint font-mono text-sm border border-n-border rounded-lg">
           no normies found across these addresses
         </div>
       )}
 
-      {/* Full grid */}
-      {data && data.normies.length > 0 && (
+      {data && sortedNormies.length > 0 && (
         <div className="space-y-3">
-          <span className="text-xs font-mono text-n-muted uppercase tracking-widest">
+          <WalletSortBar value={sortKey} onChange={setSortKey} />
+          <span className="text-xs font-mono text-n-muted uppercase tracking-widest block">
             all {data.totalOwned} normie{data.totalOwned !== 1 ? "s" : ""}
             {data.the100Count > 0 && (
               <span className="ml-3 text-amber-400/80">★ {data.the100Count} in the 100</span>
             )}
           </span>
           <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10 gap-2">
-            {data.normies.map(n => <NormieCard key={n.tokenId} n={n} />)}
+            {sortedNormies.map(n => <NormieCard key={n.tokenId} n={n} />)}
           </div>
         </div>
       )}

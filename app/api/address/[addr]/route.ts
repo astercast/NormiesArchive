@@ -187,6 +187,49 @@ async function fetchOwnedViaMulticall(address: string): Promise<number[]> {
   return batchResults.flat();
 }
 
+/** Per-token acquisition time (unix ms) from Reservoir, when available */
+async function fetchAcquiredAtMap(address: string): Promise<Map<number, number>> {
+  const map = new Map<number, number>();
+  let continuation: string | null = null;
+
+  try {
+    do {
+      const base = `https://api.reservoir.tools/users/${address}/tokens/v7?collection=${NORMIES_NFT}&limit=200&sortBy=acquiredAt&sortDirection=desc`;
+      const url: string = continuation
+        ? `${base}&continuation=${encodeURIComponent(continuation)}`
+        : base;
+
+      const res = await fetch(url, {
+        headers: { accept: "application/json" },
+        cache: "no-store",
+      });
+      if (!res.ok) break;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const data: any = await res.json();
+
+      for (const item of data.tokens ?? []) {
+        const id = parseInt(item.token?.tokenId ?? "");
+        const raw =
+          item.token?.acquiredAt ??
+          item.ownership?.acquiredAt ??
+          item.acquiredAt;
+        if (isNaN(id) || id < 0 || id > 9999 || raw == null) continue;
+        const ms =
+          typeof raw === "number"
+            ? raw > 1e12
+              ? raw
+              : raw * 1000
+            : new Date(raw).getTime();
+        if (!Number.isNaN(ms)) map.set(id, ms);
+      }
+      continuation = data.continuation ?? null;
+    } while (continuation);
+  } catch (e) {
+    console.warn("[address] acquiredAt lookup failed:", e);
+  }
+
+  return map;
+}
 
 export interface WalletNormie {
   tokenId:    number;
@@ -200,6 +243,8 @@ export interface WalletNormie {
   the100Rank: number | null;
   burnCount:  number;
   pixelCount: number;
+  /** Unix ms when this wallet acquired the token, if known */
+  acquiredAt: number | null;
 }
 
 interface Props { params: Promise<{ addr: string }> }
@@ -214,8 +259,9 @@ export async function GET(_req: Request, { params }: Props) {
   const checksumAddr = addr;
 
   try {
-    const [tokenIds, leaderboardData, the100Data] = await Promise.all([
+    const [tokenIds, acquiredAtMap, leaderboardData, the100Data] = await Promise.all([
       fetchOwnedTokenIds(checksumAddr),
+      fetchAcquiredAtMap(checksumAddr),
       getLeaderboards(),
       getThe100(),
     ]);
@@ -251,10 +297,9 @@ export async function GET(_req: Request, { params }: Props) {
         the100Rank: rank,
         burnCount:  burnCountMap.get(id) ?? 0,
         pixelCount: pixelCountOf(id),
+        acquiredAt: acquiredAtMap.get(id) ?? null,
       };
     });
-
-    normies.sort((a, b) => b.ap - a.ap || b.level - a.level || a.tokenId - b.tokenId);
 
     const res = NextResponse.json({
       address:        addr.toLowerCase(),
