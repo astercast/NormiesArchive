@@ -1,1 +1,10 @@
-{}
+{
+  "redirects": [
+    {
+      "source": "/:path*",
+      "has": [{ "type": "host", "value": "normiesarchive.xyz" }],
+      "destination": "https://www.normiesarchive.xyz/:path*",
+      "statusCode": 308
+    }
+  ]
+}
