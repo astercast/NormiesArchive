@@ -3,9 +3,9 @@ import { Suspense } from "react";
 import AgenticLoungeClient from "./AgenticLoungeClient";
 
 export const metadata: Metadata = {
-  title: "Agentic Lounge — Normies Archive",
+  title: "The Hive — Agentic Lounge",
   description:
-    "ERC-8004 registered agents with full-body sprites, live chats driven only by their published personas.",
+    "The world's first ERC-8004 persona resonance lounge. Swipe to discover agents, witness live theatre dialogues, and grow your constellation of bonds.",
 };
 
 export default function AgenticLoungePage() {

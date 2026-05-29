@@ -99,3 +99,25 @@ body::before {
 .dark .tag-active {
   background: rgba(212,213,211,0.06);
 }
+
+.safe-area-pb {
+  padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
+}
+
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
+@keyframes hive-ticker-scroll {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+.hive-ticker {
+  display: inline-block;
+  animation: hive-ticker-scroll 28s linear infinite;
+}
