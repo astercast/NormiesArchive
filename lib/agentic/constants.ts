@@ -4,7 +4,7 @@ export const SPRITES_API = "https://fullnormies.xyz/api/v1";
 export const LS_DISCOVERED = "nl_discovered_v5";
 export const LS_PINNED = "nl_pinned_v5";
 
-export const MAX_PINS = 3;
+export const MAX_PINS = 7;
 export const PAGE_SIZE = 100;
 
 export const SCALE = 2;

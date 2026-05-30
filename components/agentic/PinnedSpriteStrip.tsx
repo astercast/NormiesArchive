@@ -1,21 +1,18 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import {
-  SPRITES_API,
-  SPR_W,
-  SPR_H,
-  ANC_X,
-  ANC_Y,
-  FOOT_BELOW,
-  FRAME_PX,
-  STAND_FRAME,
-  WALK_FRAME_MS,
-  BASE_SPEED,
-} from "@/lib/agentic/constants";
+import { SPRITES_API, WALK_FRAME_MS, BASE_SPEED } from "@/lib/agentic/constants";
 
-const SPRITE_HIT_PAD = 8;
-const MIN_SEP = SPR_W * 0.85;
+/** Smaller sprites in the fixed-height preview strip (container stays h-24 / h-28). */
+const PREVIEW_SCALE = 1;
+const SPR_W = 40 * PREVIEW_SCALE;
+const SPR_H = 80 * PREVIEW_SCALE;
+const ANC_X = 20 * PREVIEW_SCALE;
+const ANC_Y = 60 * PREVIEW_SCALE;
+const FOOT_BELOW = SPR_H - ANC_Y;
+const FRAME_PX = SPR_W;
+const SPRITE_HIT_PAD = 4;
+const MIN_SEP = SPR_W * 0.72;
 
 interface Body {
   fx: number;
@@ -43,20 +40,20 @@ function pickTarget(minFx: number, maxFx: number, minFy: number, maxFy: number) 
 }
 
 function mkBody(cw: number, sh: number, index: number, total: number): Body {
-  const minFx = ANC_X + 6;
-  const maxFx = cw - (SPR_W - ANC_X) - 6;
-  const minFy = ANC_Y + 4;
-  const maxFy = sh - FOOT_BELOW - 8;
+  const minFx = ANC_X + 4;
+  const maxFx = cw - (SPR_W - ANC_X) - 4;
+  const minFy = ANC_Y + 2;
+  const maxFy = sh - FOOT_BELOW - 6;
   const slot = total > 1 ? index / (total - 1) : 0.5;
-  const fx = minFx + slot * Math.max(1, maxFx - minFx) + (Math.random() - 0.5) * 24;
+  const fx = minFx + slot * Math.max(1, maxFx - minFx) + (Math.random() - 0.5) * 16;
   const fy = minFy + Math.random() * Math.max(1, maxFy - minFy);
-  const speed = (0.6 + Math.random() * 0.6) * BASE_SPEED;
+  const speed = (0.5 + Math.random() * 0.5) * BASE_SPEED * 0.85;
   const w = pickTarget(minFx, maxFx, minFy, maxFy);
   return {
     fx,
     fy,
     vx: Math.random() < 0.5 ? speed : -speed,
-    vy: (Math.random() - 0.5) * 0.35,
+    vy: (Math.random() - 0.5) * 0.3,
     facing: Math.random() < 0.5 ? 1 : -1,
     wanderTx: w.tx,
     wanderTy: w.ty,
@@ -112,10 +109,10 @@ export default function PinnedSpriteStrip({ tokenIds, dark, onSelect }: Props) {
       const cw = stage?.clientWidth ?? 360;
       const sh = stage?.clientHeight ?? 96;
       const ids = idsRef.current;
-      const minFx = ANC_X + 6;
-      const maxFx = cw - (SPR_W - ANC_X) - 6;
-      const minFy = ANC_Y + 4;
-      const maxFy = sh - FOOT_BELOW - 8;
+      const minFx = ANC_X + 4;
+      const maxFx = cw - (SPR_W - ANC_X) - 4;
+      const minFy = ANC_Y + 2;
+      const maxFy = sh - FOOT_BELOW - 6;
 
       for (const id of ids) {
         const b = bodies.current.get(id);
@@ -187,6 +184,8 @@ export default function PinnedSpriteStrip({ tokenIds, dark, onSelect }: Props) {
 
   if (tokenIds.length === 0) return null;
 
+  const sheetW = 7 * SPR_W + SPRITE_HIT_PAD * 2;
+
   return (
     <div
       ref={stageRef}
@@ -216,7 +215,7 @@ export default function PinnedSpriteStrip({ tokenIds, dark, onSelect }: Props) {
             height: SPR_H + SPRITE_HIT_PAD * 2,
             padding: SPRITE_HIT_PAD,
             backgroundImage: `url(${SPRITES_API}/normies/${id}/sheet.png)`,
-            backgroundSize: `${7 * SPR_W + SPRITE_HIT_PAD * 2}px auto`,
+            backgroundSize: `${sheetW}px auto`,
             backgroundRepeat: "no-repeat",
             backgroundPosition: `${SPRITE_HIT_PAD}px ${SPRITE_HIT_PAD}px`,
             imageRendering: "pixelated",

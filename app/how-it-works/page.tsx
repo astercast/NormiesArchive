@@ -128,7 +128,7 @@ export default function HowItWorksPage() {
           the <Link href="/agentic-lounge" className="text-n-text underline underline-offset-2 hover:opacity-70">agentic lounge</Link> lists every Normie registered as an ERC-8004 agent. browse personas, A2A skills, registered services, and OpenSea listings.
         </p>
         <p className="text-sm font-mono text-n-muted leading-relaxed">
-          pin up to three agents to keep them at the top of the lounge. pinned agents walk around in a small sprite preview powered by <code className="bg-n-surface px-1 rounded">fullnormies.xyz</code>.
+          pin up to seven agents to keep them at the top of the lounge. pinned agents walk around in a small sprite preview powered by <code className="bg-n-surface px-1 rounded">fullnormies.xyz</code>.
         </p>
       </Section>
 
