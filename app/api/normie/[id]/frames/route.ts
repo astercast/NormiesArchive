@@ -82,7 +82,7 @@ export async function GET(_req: Request, { params }: Props) {
   const tokenId = parseInt(id, 10);
   if (isNaN(tokenId) || tokenId < 0 || tokenId > 9999) {
     return NextResponse.json(
-      { error: "Invalid token ID (0–9999)" },
+      { error: "Invalid token ID (0-9999)" },
       { status: 400, headers: CORS }
     );
   }

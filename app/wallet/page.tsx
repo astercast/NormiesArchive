@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import WalletSearchClient from "./WalletSearchClient";
 
 export const metadata: Metadata = {
-  title: "Wallet Search — Normies Archive",
+  title: "Wallet Search | Normies Archive",
   description: "Look up any wallet or ENS name to see all owned Normies with flexible sorting.",
 };
 

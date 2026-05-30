@@ -10,11 +10,7 @@ interface Props {
   agents: AgentListItem[];
   totalCount: number;
   loading: boolean;
-  loadingMore: boolean;
-  hasMore: boolean;
-  onLoadMore: () => void;
   dark?: boolean;
-  discoveredIds: Set<number>;
   pinnedIds: number[];
   listings: Map<number, { listed: boolean; price?: number; currency?: string }>;
   onSelect: (tokenId: number) => void;
@@ -24,11 +20,7 @@ export default function AgentRegistry({
   agents,
   totalCount,
   loading,
-  loadingMore,
-  hasMore,
-  onLoadMore,
   dark,
-  discoveredIds,
   pinnedIds,
   listings,
   onSelect,
@@ -53,16 +45,22 @@ export default function AgentRegistry({
     return list;
   }, [agents, typeFilter, sort, query, personas]);
 
+  const typeCounts = useMemo(() => {
+    const counts: Record<string, number> = { all: agents.length };
+    for (const a of agents) counts[a.type] = (counts[a.type] ?? 0) + 1;
+    return counts;
+  }, [agents]);
+
   useEffect(() => {
-    const missing = filtered.slice(0, 24).map(a => Number(a.tokenId)).filter(t => !personas.has(t));
-    if (!missing.length) return;
+    const visible = filtered.slice(0, 36).map(a => Number(a.tokenId)).filter(t => !personas.has(t));
+    if (!visible.length) return;
     let cancelled = false;
     (async () => {
-      for (const tid of missing.slice(0, 8)) {
+      for (const tid of visible.slice(0, 10)) {
         if (cancelled) break;
         const p = await fetchPersonaPreview(tid);
         if (p) setPersonas(prev => new Map(prev).set(tid, p));
-        await new Promise(r => setTimeout(r, 50));
+        await new Promise(r => setTimeout(r, 40));
       }
     })();
     return () => {
@@ -74,19 +72,17 @@ export default function AgentRegistry({
 
   return (
     <section className="space-y-4">
-      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
-        <div>
-          <h2 className="text-sm font-mono text-n-text flex items-center gap-2">
-            <Bot className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />
-            agent registry
-          </h2>
-          <p className="text-xs font-mono text-n-faint mt-1">
-            {totalCount > 0 ? `${totalCount.toLocaleString()} ERC-8004 identities` : "loading registry…"}
-            {agents.length > 0 && totalCount > agents.length
-              ? ` · showing ${agents.length.toLocaleString()}`
-              : ""}
-          </p>
-        </div>
+      <div>
+        <h2 className="text-sm font-mono text-n-text flex items-center gap-2">
+          <Bot className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />
+          agent registry
+        </h2>
+        <p className="text-xs font-mono text-n-faint mt-1">
+          {loading
+            ? "loading all agents…"
+            : `${filtered.length.toLocaleString()} shown${typeFilter !== "all" ? ` · ${typeFilter.toLowerCase()}` : ""}`}
+          {!loading && totalCount > 0 ? ` · ${totalCount.toLocaleString()} total` : ""}
+        </p>
       </div>
 
       <div className="relative">
@@ -101,20 +97,24 @@ export default function AgentRegistry({
       </div>
 
       <div className="flex gap-2 overflow-x-auto scrollbar-none pb-0.5">
-        {types.map(t => (
-          <button
-            key={t}
-            type="button"
-            onClick={() => setTypeFilter(t)}
-            className={`shrink-0 px-3 py-1.5 min-h-[36px] text-[11px] font-mono rounded-full border touch-manipulation ${
-              typeFilter === t
-                ? "border-cyan-500 bg-cyan-500/10 text-cyan-700 dark:text-cyan-300"
-                : "border-n-border text-n-muted"
-            }`}
-          >
-            {t === "all" ? "all" : t.toLowerCase()}
-          </button>
-        ))}
+        {types.map(t => {
+          const count = typeCounts[t === "all" ? "all" : t] ?? 0;
+          return (
+            <button
+              key={t}
+              type="button"
+              onClick={() => setTypeFilter(t)}
+              className={`shrink-0 px-3 py-1.5 min-h-[36px] text-[11px] font-mono rounded-full border touch-manipulation ${
+                typeFilter === t
+                  ? "border-cyan-500 bg-cyan-500/10 text-cyan-700 dark:text-cyan-300"
+                  : "border-n-border text-n-muted"
+              }`}
+            >
+              {t === "all" ? "all" : t.toLowerCase()}
+              {!loading && count > 0 ? ` (${count})` : ""}
+            </button>
+          );
+        })}
         <button
           type="button"
           onClick={() => setSort(s => (s === "newest" ? "oldest" : "newest"))}
@@ -140,7 +140,6 @@ export default function AgentRegistry({
                 agent={a}
                 persona={personas.get(tid)}
                 listing={listings.get(tid)}
-                discovered={discoveredIds.has(tid)}
                 pinned={pinnedIds.includes(tid)}
                 dark={dark}
                 onClick={() => onSelect(tid)}
@@ -148,17 +147,6 @@ export default function AgentRegistry({
             );
           })}
         </div>
-      )}
-
-      {hasMore && (
-        <button
-          type="button"
-          onClick={onLoadMore}
-          disabled={loadingMore}
-          className="w-full min-h-[48px] text-xs font-mono text-n-muted border border-n-border rounded-xl hover:border-n-text touch-manipulation flex items-center justify-center gap-2"
-        >
-          {loadingMore ? <Loader2 className="w-4 h-4 animate-spin" /> : "load more agents"}
-        </button>
       )}
     </section>
   );

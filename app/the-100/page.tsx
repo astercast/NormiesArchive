@@ -3,7 +3,7 @@ import The100Client from "./The100Client";
 
 export const metadata = {
   title: "The 100",
-  description: "The first 100 Normies ever edited on the Canvas — the original pioneers.",
+  description: "The first 100 Normies ever edited on the Canvas. The original pioneers.",
 };
 
 export default function The100Page() {
@@ -13,7 +13,7 @@ export default function The100Page() {
         <div className="text-xs font-mono text-n-muted uppercase tracking-widest">hall of pioneers</div>
         <h1 className="text-3xl font-mono font-medium text-n-text">the 100</h1>
         <p className="text-xs font-mono text-n-muted">
-          the first 100 normies ever touched by the canvas — sorted by block, verified on-chain.
+          the first 100 normies ever touched by the canvas, sorted by block, verified on-chain.
         </p>
       </div>
       <Suspense fallback={

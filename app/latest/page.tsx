@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import LatestWorksClient from "./LatestWorksClient";
 
 export const metadata: Metadata = {
-  title: "Latest Works — Normies Pixel Archive",
+  title: "Latest Works | Normies Pixel Archive",
   description: "The most recently edited Normies on Ethereum mainnet.",
 };
 

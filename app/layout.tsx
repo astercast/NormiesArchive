@@ -5,7 +5,7 @@ import Nav from "@/components/Nav";
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://normiesarchive.xyz"),
-  title: { default: "Normies Pixel Archive", template: "%s — Normies Pixel Archive" },
+  title: { default: "Normies Pixel Archive", template: "%s | Normies Pixel Archive" },
   description: "The complete pixel evolution history of every Normie. 10,000 on-chain 40×40 monochrome faces.",
   openGraph: {
     siteName: "Normies Pixel Archive",

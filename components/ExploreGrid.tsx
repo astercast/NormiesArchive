@@ -56,7 +56,7 @@ function AgenticBadge() {
   return (
     <span
       className="absolute bottom-0.5 left-0.5 flex items-center justify-center w-3.5 h-3.5 rounded bg-cyan-500/90 text-white"
-      title="Agentic — ERC-8004 registered"
+      title="Agentic | ERC-8004 registered"
     >
       <Bot className="w-2 h-2" />
     </span>

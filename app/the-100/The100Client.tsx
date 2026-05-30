@@ -223,13 +223,13 @@ export default function The100Client() {
                     onClick={() => exportGrid(false)}
                     className="w-full text-left px-3 py-2 text-xs font-mono text-n-muted hover:text-n-text hover:bg-n-surface transition-colors"
                   >
-                    new100 — current canvas
+                    new100: current canvas
                   </button>
                   <button
                     onClick={() => exportGrid(true)}
                     className="w-full text-left px-3 py-2 text-xs font-mono text-n-muted hover:text-n-text hover:bg-n-surface transition-colors border-t border-n-border"
                   >
-                    originals — pre-edit
+                    originals: pre-edit
                   </button>
                 </div>
               )}
@@ -250,7 +250,7 @@ export default function The100Client() {
       <div className="border border-n-border rounded px-4 py-3 bg-n-surface">
         <p className="text-xs font-mono text-n-muted leading-relaxed">
           when NormiesCanvas went live, someone had to go first. these are the normies whose owners
-          stepped up earliest — pioneers of the pixel canvas. rank is determined purely by block number:
+          stepped up earliest, pioneers of the pixel canvas. rank is determined purely by block number:
           the earliest on-chain edit wins.
         </p>
       </div>

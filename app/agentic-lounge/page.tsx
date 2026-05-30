@@ -5,7 +5,7 @@ import AgenticLoungeClient from "./AgenticLoungeClient";
 export const metadata: Metadata = {
   title: "Agentic Lounge",
   description:
-    "Browse every ERC-8004 Normie agent — personas, skills, registered services, and OpenSea listings in one identity registry.",
+    "Browse every ERC-8004 Normie agent: personas, skills, registered services, and OpenSea listings.",
 };
 
 export default function AgenticLoungePage() {

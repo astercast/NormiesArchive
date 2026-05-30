@@ -8,7 +8,7 @@ export async function generateMetadata({ searchParams }: Props): Promise<Metadat
   const { q } = await searchParams;
   const count = (q ?? "").split(",").map(s => s.trim()).filter(s => isAddress(s)).length;
   return {
-    title:       `${count} wallet${count !== 1 ? "s" : ""} — Normies Archive`,
+    title:       `${count} wallet${count !== 1 ? "s" : ""} | Normies Archive`,
     description: `Combined Normies view across ${count} wallet${count !== 1 ? "s" : ""}.`,
   };
 }

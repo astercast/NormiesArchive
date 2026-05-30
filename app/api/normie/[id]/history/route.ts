@@ -37,7 +37,7 @@ export async function GET(_req: Request, { params }: Props) {
   const { id } = await params;
   const tokenId = parseInt(id);
   if (isNaN(tokenId) || tokenId < 0 || tokenId > 9999) {
-    return NextResponse.json({ error: "Invalid token ID (0–9999)" }, { status: 400 });
+    return NextResponse.json({ error: "Invalid token ID (0-9999)" }, { status: 400 });
   }
 
   // Primary: api.normies.art Ponder indexer (reliable, timestamps included, up-to-the-minute)

@@ -11,11 +11,13 @@ export async function fetchAgentList(params: {
   limit?: number;
   cursor?: string | null;
   sort?: SortMode;
+  type?: string;
 }): Promise<{ items: AgentListItem[]; hasMore: boolean; nextCursor: string | null }> {
   const url = new URL("/api/agents/list", window.location.origin);
-  url.searchParams.set("limit", String(params.limit ?? 24));
+  url.searchParams.set("limit", String(params.limit ?? 100));
   url.searchParams.set("sort", params.sort ?? "newest");
   if (params.cursor) url.searchParams.set("cursor", params.cursor);
+  if (params.type && params.type !== "all") url.searchParams.set("type", params.type);
   const r = await fetch(url.toString());
   if (!r.ok) return { items: [], hasMore: false, nextCursor: null };
   const d = await r.json();
@@ -23,6 +25,20 @@ export async function fetchAgentList(params: {
   const hasMore = d.hasMore ?? false;
   const nextCursor = items.length ? items[items.length - 1].agentId : null;
   return { items, hasMore, nextCursor };
+}
+
+export async function fetchAllAgents(sort: SortMode = "newest"): Promise<AgentListItem[]> {
+  const all: AgentListItem[] = [];
+  let cursor: string | null = null;
+  let hasMore = true;
+  while (hasMore) {
+    const res = await fetchAgentList({ limit: 100, cursor, sort });
+    if (!res.items.length) break;
+    all.push(...res.items);
+    cursor = res.nextCursor;
+    hasMore = res.hasMore;
+  }
+  return all;
 }
 
 export async function fetchPersonaPreview(tokenId: number): Promise<PersonaPreview | null> {

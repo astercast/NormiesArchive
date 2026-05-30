@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
-import { Loader2, RefreshCw, ExternalLink, Clock } from "lucide-react";
+import { Loader2, RefreshCw, ExternalLink, Clock, Download } from "lucide-react";
 import NormieGrid from "@/components/NormieGrid";
 import { buildSimulatedFrames } from "@/lib/pixelUtils";
 
@@ -58,6 +58,8 @@ async function loadFrames(tokenId: number): Promise<string[]> {
 function HeroNormie({ entry }: { entry: LatestEntry }) {
   const [frameData, setFrameData] = useState<NormieFrames>({ tokenId: entry.tokenId, frames: [], ready: false });
   const [step,      setStep]      = useState(0);
+  const [exporting, setExporting] = useState(false);
+  const [exportPct, setExportPct] = useState(0);
   const intervalRef               = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Load frames when entry changes
@@ -82,6 +84,21 @@ function HeroNormie({ entry }: { entry: LatestEntry }) {
   }, [frameData.ready, frameData.frames.length]);
 
   const currentFrame = frameData.frames[step] ?? "";
+
+  const handleExportGif = useCallback(async () => {
+    if (!frameData.ready || frameData.frames.length < 2 || exporting) return;
+    setExporting(true);
+    setExportPct(0);
+    try {
+      const { exportSimulatedFramesGif } = await import("@/lib/gifExport");
+      await exportSimulatedFramesGif(frameData.frames, entry.tokenId, 10, FRAME_MS, setExportPct);
+    } catch (err) {
+      console.error("[latest] gif export", err);
+    } finally {
+      setExporting(false);
+      setExportPct(0);
+    }
+  }, [frameData, entry.tokenId, exporting]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -146,9 +163,29 @@ function HeroNormie({ entry }: { entry: LatestEntry }) {
             <span className="text-xs font-mono text-n-faint">{entry.editCount} edits</span>
           </div>
         </div>
-        <div className="text-right flex-shrink-0">
-          <p className="text-[10px] font-mono text-n-faint">block</p>
-          <p className="text-xs font-mono text-n-muted">{entry.blockNumber.toLocaleString()}</p>
+        <div className="text-right flex-shrink-0 flex flex-col items-end gap-2">
+          <div>
+            <p className="text-[10px] font-mono text-n-faint">block</p>
+            <p className="text-xs font-mono text-n-muted">{entry.blockNumber.toLocaleString()}</p>
+          </div>
+          <button
+            type="button"
+            onClick={handleExportGif}
+            disabled={!frameData.ready || frameData.frames.length < 2 || exporting}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 min-h-[36px] text-[11px] font-mono border border-n-border rounded hover:border-n-text text-n-muted hover:text-n-text disabled:opacity-40 touch-manipulation"
+          >
+            {exporting ? (
+              <>
+                <Loader2 className="w-3 h-3 animate-spin" />
+                {Math.round(exportPct * 100)}%
+              </>
+            ) : (
+              <>
+                <Download className="w-3 h-3" />
+                export gif
+              </>
+            )}
+          </button>
         </div>
       </div>
     </div>

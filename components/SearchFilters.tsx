@@ -42,7 +42,7 @@ export default function SearchFilters({ compact = false }: SearchFiltersProps) {
           <input
             type="number" min="0" max="9999" value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="search #0–9999"
+            placeholder="search #0-9999"
             className="w-36 pl-7 pr-2 py-1.5 bg-n-surface border border-n-border rounded text-xs font-mono text-n-text placeholder:text-n-faint focus:outline-none focus:border-n-muted transition-colors"
           />
         </div>
@@ -63,7 +63,7 @@ export default function SearchFilters({ compact = false }: SearchFiltersProps) {
           <input
             type="number" min="0" max="9999" value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="search normie #0–9999"
+            placeholder="search normie #0-9999"
             className="w-full pl-9 pr-4 py-2 bg-n-surface border border-n-border rounded text-xs font-mono text-n-text placeholder:text-n-faint focus:outline-none focus:border-n-text transition-colors"
           />
         </div>

@@ -98,7 +98,7 @@ export default function Nav() {
                   max={9999}
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder="0–9999"
+                  placeholder="0-9999"
                   className="w-24 sm:w-28 pl-7 pr-2 py-1.5 bg-n-surface border border-n-border rounded text-xs font-mono text-n-text placeholder:text-n-faint focus:outline-none focus:border-n-muted transition-colors"
                 />
               </div>
@@ -164,7 +164,7 @@ export default function Nav() {
                       max={9999}
                       value={query}
                       onChange={(e) => setQuery(e.target.value)}
-                      placeholder="normie #id (0–9999)"
+                      placeholder="normie #id (0-9999)"
                       className="w-full pl-7 pr-2 py-2 bg-n-surface border border-n-border rounded text-xs font-mono text-n-text placeholder:text-n-faint focus:outline-none focus:border-n-muted transition-colors"
                     />
                   </div>

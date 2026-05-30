@@ -74,7 +74,7 @@ export async function exportTimelineGif(
       renderToCanvas(ctx, frames[i], scale);
 
       // Watermark — top right, plain grey text
-      const wmText     = `normie #${tokenId} · normiesarchive.vercel.app`;
+      const wmText     = `normie #${tokenId} · normiesarchive.xyz`;
       const wmFontSize = Math.max(6, Math.round(scale * 0.85));
       ctx.font          = `${wmFontSize}px monospace`;
       ctx.fillStyle     = "rgba(140,140,140,0.85)";
@@ -110,16 +110,15 @@ export async function exportTimelineGif(
   }
 }
 
-/** Origin → latest only (2 frames), same pacing feel as Latest Works hero. */
-export async function exportLatestStyleGif(
-  originalStr: string,
-  currentStr: string,
+/** Export simulated edit animation (same frames as Latest Works hero). */
+export async function exportSimulatedFramesGif(
+  frames: string[],
   tokenId: number,
-  scale: number = 8,
+  scale: number = 10,
+  frameMs: number = 350,
   onProgress?: (progress: number) => void
 ): Promise<void> {
-  if (!originalStr || !currentStr) return;
-  const frames = [originalStr, currentStr];
+  if (frames.length < 2) return;
 
   const size = GRID_SIZE * scale;
   const offscreen = document.createElement("canvas");
@@ -141,7 +140,7 @@ export async function exportLatestStyleGif(
     for (let i = 0; i < frames.length; i++) {
       renderToCanvas(ctx, frames[i], scale);
 
-      const wmText = `normie #${tokenId} · normiesarchive.vercel.app`;
+      const wmText = `normie #${tokenId} · normiesarchive.xyz`;
       const wmFontSize = Math.max(6, Math.round(scale * 0.85));
       ctx.font = `${wmFontSize}px monospace`;
       ctx.fillStyle = "rgba(140,140,140,0.85)";
@@ -150,8 +149,7 @@ export async function exportLatestStyleGif(
       ctx.fillText(wmText, size - 3, 3);
       ctx.textBaseline = "alphabetic";
 
-      const delay = i === 0 ? 800 : 1200;
-      gif.addFrame(ctx, { delay, copy: true });
+      gif.addFrame(ctx, { delay: frameMs, copy: true });
       onProgress?.((i + 0.5) / frames.length);
     }
 
@@ -165,10 +163,27 @@ export async function exportLatestStyleGif(
       gif.render();
     });
   } catch (err) {
-    console.warn("Latest-style GIF export failed, falling back to PNG:", err);
-    await exportCurrentFrameAsPng(currentStr, tokenId, scale, ctx, offscreen);
+    console.warn("Simulated GIF export failed, falling back to PNG:", err);
+    await exportCurrentFrameAsPng(
+      frames[frames.length - 1] || frames[0],
+      tokenId,
+      scale,
+      ctx,
+      offscreen
+    );
     onProgress?.(1);
   }
+}
+
+/** @deprecated Use exportSimulatedFramesGif with buildSimulatedFrames output. */
+export async function exportLatestStyleGif(
+  originalStr: string,
+  currentStr: string,
+  tokenId: number,
+  scale: number = 8,
+  onProgress?: (progress: number) => void
+): Promise<void> {
+  await exportSimulatedFramesGif([originalStr, currentStr], tokenId, scale, 350, onProgress);
 }
 
 async function exportCurrentFrameAsPng(

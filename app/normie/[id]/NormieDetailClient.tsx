@@ -195,21 +195,21 @@ export default function NormieDetailClient({ tokenId }: Props) {
     setIsExportingLatest(true);
     setExportLatestPct(0);
     try {
-      const { exportLatestStyleGif } = await import("@/lib/gifExport");
-      await exportLatestStyleGif(
+      const { exportSimulatedFramesGif } = await import("@/lib/gifExport");
+      const { buildSimulatedFrames } = await import("@/lib/pixelUtils");
+      const simulated = buildSimulatedFrames(
         originalPixels,
         currentPixels,
-        tokenId,
-        8,
-        setExportLatestPct
+        editHistory.map(e => ({ changeCount: e.changeCount ?? 1 }))
       );
+      await exportSimulatedFramesGif(simulated, tokenId, 10, 350, setExportLatestPct);
     } catch (err) {
       console.error("Latest-style export failed:", err);
     } finally {
       setIsExportingLatest(false);
       setExportLatestPct(0);
     }
-  }, [originalPixels, currentPixels, tokenId, isExportingLatest]);
+  }, [originalPixels, currentPixels, editHistory, tokenId, isExportingLatest]);
 
   const handleShare = useCallback(() => {
     navigator.clipboard.writeText(window.location.href);
@@ -341,7 +341,7 @@ export default function NormieDetailClient({ tokenId }: Props) {
           </button>
           <button onClick={handleExportLatest} disabled={isExporting || isExportingLatest || !originalPixels || !currentPixels}
             className="px-2.5 py-1.5 border border-n-border text-n-muted text-xs font-mono rounded hover:text-n-text hover:border-n-text transition-colors disabled:opacity-40 flex items-center gap-1"
-            title="Two-frame GIF: original mint, then current look">
+            title="Simulated edit animation, same as Latest Works">
             {isExportingLatest
               ? <><Loader2 className="w-3 h-3 animate-spin" /> {Math.round(exportLatestPct * 100)}%</>
               : <><Download className="w-3 h-3" /> latest style gif</>}
@@ -506,8 +506,8 @@ export default function NormieDetailClient({ tokenId }: Props) {
                         </button>
                       </span>
                     : customized
-                      ? "one edit — use play to animate"
-                      : "no edit history — pristine from mint"}
+                      ? "one edit. use play to animate"
+                      : "no edit history. pristine from mint"}
               </div>
             )}
           </div>

@@ -8,10 +8,10 @@ interface Props {
 export async function generateMetadata({ params }: Props) {
   const { id } = await params;
   return {
-    title: `Normie #${id} — Normies Pixel Archive`,
+    title: `Normie #${id} | Normies Pixel Archive`,
     description: `Full pixel evolution timeline, transformation history, and life story of Normie #${id}`,
     openGraph: {
-      title: `Normie #${id} — Normies Pixel Archive`,
+      title: `Normie #${id} | Normies Pixel Archive`,
       images: [`https://api.normies.art/normie/${id}/image.svg`],
     },
   };

@@ -1,6 +1,6 @@
 "use client";
 
-import { Bot, Sparkles } from "lucide-react";
+import { Bot } from "lucide-react";
 import { formatEth } from "@/lib/agentic/utils";
 import type { AgentListItem, PersonaPreview } from "@/lib/agentic/types";
 import { AGENTS_API } from "@/lib/agentic/constants";
@@ -10,7 +10,6 @@ interface Props {
   agent: AgentListItem;
   persona?: PersonaPreview | null;
   listing?: { listed: boolean; price?: number; currency?: string } | null;
-  discovered?: boolean;
   pinned?: boolean;
   dark?: boolean;
   onClick: () => void;
@@ -20,7 +19,6 @@ export default function AgentCard({
   agent,
   persona,
   listing,
-  discovered,
   pinned,
   dark,
   onClick,
@@ -37,9 +35,7 @@ export default function AgentCard({
       className={`w-full text-left rounded-xl border p-3 touch-manipulation transition-all active:scale-[0.98] ${
         pinned
           ? "border-cyan-400/70 bg-cyan-50/80 dark:bg-cyan-950/30 ring-1 ring-cyan-400/30"
-          : discovered
-            ? "border-violet-300/40 bg-violet-50/30 dark:bg-violet-950/20"
-            : "border-n-border bg-[var(--white)] hover:border-n-muted"
+          : "border-n-border bg-[var(--white)] hover:border-n-muted"
       }`}
     >
       <div className="flex gap-3">
@@ -61,13 +57,11 @@ export default function AgentCard({
                 #{tid} · {type.toLowerCase()}
               </p>
             </div>
-            <div className="flex flex-col items-end gap-1 shrink-0">
-              {pinned && (
-                <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-700 dark:text-cyan-300">
-                  pinned
-                </span>
-              )}
-            </div>
+            {pinned && (
+              <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-700 dark:text-cyan-300 shrink-0">
+                pinned
+              </span>
+            )}
           </div>
           {tagline && (
             <p className="text-xs text-n-muted italic line-clamp-2 leading-snug">
@@ -108,12 +102,6 @@ export default function AgentCard({
             </span>
           ))}
         </div>
-      )}
-      {!discovered && (
-        <p className="mt-2 text-[10px] font-mono text-cyan-600/80 dark:text-cyan-400/80 inline-flex items-center gap-1">
-          <Sparkles className="w-3 h-3" />
-          tap to discover
-        </p>
       )}
     </button>
   );

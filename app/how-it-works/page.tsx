@@ -3,7 +3,8 @@ import { ArrowRight } from "lucide-react";
 
 export const metadata = {
   title: "How It Works",
-  description: "How Normies, NormiesCanvas, and this archive work — burning, action points, levels, and pixel transforms explained.",
+  description:
+    "How Normies, NormiesCanvas, and this archive work: burning, action points, levels, pixel transforms, latest works, and the agentic lounge.",
 };
 
 function Section({ label, title, children }: { label: string; title: string; children: React.ReactNode }) {
@@ -44,7 +45,6 @@ export default function HowItWorksPage() {
   return (
     <div className="max-w-2xl mx-auto px-4 py-12 space-y-12">
 
-      {/* Header */}
       <div className="space-y-2">
         <div className="text-xs font-mono text-n-muted uppercase tracking-widest">docs</div>
         <h1 className="text-3xl font-mono font-medium text-n-text">how it works</h1>
@@ -55,29 +55,26 @@ export default function HowItWorksPage() {
 
       <div className="border-t border-n-border" />
 
-      {/* NORMIES */}
       <Section label="part 1" title="what is a normie?">
         <p className="text-sm font-mono text-n-muted leading-relaxed">
-          Normies is a collection of 10,000 NFTs on Ethereum. each one is a <strong className="text-n-text">40×40 monochrome bitmap</strong> — 1,600 pixels stored entirely on-chain. no IPFS, no external servers.
+          Normies is a collection of 10,000 NFTs on Ethereum. each one is a <strong className="text-n-text">40×40 monochrome bitmap</strong>, 1,600 pixels stored entirely on-chain. no IPFS, no external servers.
         </p>
         <p className="text-sm font-mono text-n-muted leading-relaxed">
           each normie also includes traits like type, gender, age, hair, eyes, expression, and accessory, all packed into a tiny amount of on-chain storage.
         </p>
       </Section>
 
-      {/* CANVAS */}
       <Section label="part 2" title="normiescanvas">
         <p className="text-sm font-mono text-n-muted leading-relaxed">
           NormiesCanvas lets owners edit a normie&apos;s pixels. edits are stored on-chain as a <strong className="text-n-text">transform layer</strong> that flips pixels on top of the original.
         </p>
         <p className="text-sm font-mono text-n-muted leading-relaxed">
-          the original normie is never destroyed — both the original and the transform are kept on-chain. edit at{' '}
+          the original normie is never destroyed. both the original and the transform are kept on-chain. edit at{" "}
           <a href="https://www.normies.art/lab" target="_blank" rel="noopener noreferrer"
              className="text-n-text underline underline-offset-2 hover:opacity-70 transition-opacity">normies.art/lab</a>.
         </p>
       </Section>
 
-      {/* BURNS & AP */}
       <Section label="part 3" title="burning &amp; action points">
         <p className="text-sm font-mono text-n-muted leading-relaxed">
           editing pixels costs <strong className="text-n-text">Action Points (AP)</strong>. AP is earned by burning other normies into a target normie. the burned normie is destroyed permanently.
@@ -89,7 +86,6 @@ export default function HowItWorksPage() {
         </div>
       </Section>
 
-      {/* LEVELS */}
       <Section label="part 4" title="levels">
         <p className="text-sm font-mono text-n-muted leading-relaxed">level is a display stat derived from AP:</p>
         <div className="border border-n-border rounded px-4 py-3 bg-n-surface font-mono text-sm text-center text-n-text">
@@ -102,7 +98,6 @@ export default function HowItWorksPage() {
 
       <div className="border-t border-n-border" />
 
-      {/* THIS ARCHIVE */}
       <Section label="part 5" title="about this archive">
         <p className="text-sm font-mono text-n-muted leading-relaxed">
           this site indexes every on-chain edit and makes each normie&apos;s full history explorable.
@@ -119,16 +114,34 @@ export default function HowItWorksPage() {
         </Callout>
       </Section>
 
+      <Section label="part 6" title="latest works">
+        <p className="text-sm font-mono text-n-muted leading-relaxed">
+          the <Link href="/latest" className="text-n-text underline underline-offset-2 hover:opacity-70">latest works</Link> page tracks the most recently edited normies on-chain and plays a simulated edit animation for each one.
+        </p>
+        <p className="text-sm font-mono text-n-muted leading-relaxed">
+          you can export the animation as a GIF directly from that page. the same style export is available on individual normie pages as &ldquo;latest style gif&rdquo;.
+        </p>
+      </Section>
+
+      <Section label="part 7" title="agentic lounge">
+        <p className="text-sm font-mono text-n-muted leading-relaxed">
+          the <Link href="/agentic-lounge" className="text-n-text underline underline-offset-2 hover:opacity-70">agentic lounge</Link> lists every Normie registered as an ERC-8004 agent. browse personas, A2A skills, registered services, and OpenSea listings.
+        </p>
+        <p className="text-sm font-mono text-n-muted leading-relaxed">
+          pin up to three agents to keep them at the top of the lounge. pinned agents walk around in a small sprite preview powered by <code className="bg-n-surface px-1 rounded">fullnormies.xyz</code>.
+        </p>
+      </Section>
+
       <div className="border-t border-n-border" />
 
       <p className="text-xs font-mono text-n-muted">
-        built by{' '}
+        built by{" "}
         <a href="https://x.com/aster0x" target="_blank" rel="noopener noreferrer"
            className="hover:text-n-text transition-colors">@aster0x</a>
       </p>
 
       <p className="text-xs font-mono text-n-muted leading-relaxed">
-        this was made out of normie love. feel like donating?{' '}
+        this was made out of normie love. feel like donating?{" "}
         <a
           href="https://etherscan.io/address/astercast.eth"
           target="_blank"
@@ -137,13 +150,21 @@ export default function HowItWorksPage() {
         >
           astercast.eth
         </a>
-        {' '}← thank you very much for all support and feedback! 🙏
+        {" "}← thank you very much for all support and feedback! 🙏
       </p>
 
       <div className="flex flex-wrap gap-3">
         <Link href="/leaderboard"
           className="inline-flex items-center gap-1.5 px-4 py-2 border border-n-border text-xs font-mono text-n-muted hover:text-n-text hover:border-n-text transition-colors rounded">
           leaderboard <ArrowRight className="w-3 h-3" />
+        </Link>
+        <Link href="/latest"
+          className="inline-flex items-center gap-1.5 px-4 py-2 border border-n-border text-xs font-mono text-n-muted hover:text-n-text hover:border-n-text transition-colors rounded">
+          latest works <ArrowRight className="w-3 h-3" />
+        </Link>
+        <Link href="/agentic-lounge"
+          className="inline-flex items-center gap-1.5 px-4 py-2 border border-n-border text-xs font-mono text-n-muted hover:text-n-text hover:border-n-text transition-colors rounded">
+          agentic lounge <ArrowRight className="w-3 h-3" />
         </Link>
         <Link href="/the-100"
           className="inline-flex items-center gap-1.5 px-4 py-2 border border-n-border text-xs font-mono text-n-muted hover:text-n-text hover:border-n-text transition-colors rounded">
@@ -156,10 +177,6 @@ export default function HowItWorksPage() {
         <a href="https://normies.art" target="_blank" rel="noopener noreferrer"
           className="inline-flex items-center gap-1.5 px-4 py-2 border border-n-border text-xs font-mono text-n-muted hover:text-n-text hover:border-n-text transition-colors rounded">
           normies.art <ArrowRight className="w-3 h-3" />
-        </a>
-        <a href="https://normuseum.vercel.app/" target="_blank" rel="noopener noreferrer"
-          className="inline-flex items-center gap-1.5 px-4 py-2 border border-n-border text-xs font-mono text-n-muted hover:text-n-text hover:border-n-text transition-colors rounded">
-          museum <ArrowRight className="w-3 h-3" />
         </a>
         <a href="https://fullnormies.xyz/" target="_blank" rel="noopener noreferrer"
           className="inline-flex items-center gap-1.5 px-4 py-2 border border-n-border text-xs font-mono text-n-muted hover:text-n-text hover:border-n-text transition-colors rounded">

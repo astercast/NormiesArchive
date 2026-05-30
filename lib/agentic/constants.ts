@@ -1,18 +1,11 @@
 export const AGENTS_API = "https://api.normies.art";
-export const SPRITES_API = "https://fullnormies.vercel.app/api/v1";
+export const SPRITES_API = "https://fullnormies.xyz/api/v1";
 
-export const PASSCODE = "4356";
-export const LS_UNLOCK = "nl_unlocked_v6";
 export const LS_DISCOVERED = "nl_discovered_v5";
 export const LS_PINNED = "nl_pinned_v5";
-export const LS_WITNESS = "nl_witness_v5";
 
 export const MAX_PINS = 3;
-export const CHAT_MAX = 32;
-export const WITNESS_MAX = 50;
-export const PAGE_SIZE = 24;
-export const INITIAL_LIST_PAGES = 2;
-export const MAX_LIST = 200;
+export const PAGE_SIZE = 100;
 
 export const SCALE = 2;
 export const SPR_W = 40 * SCALE;
