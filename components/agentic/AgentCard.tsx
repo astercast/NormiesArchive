@@ -68,11 +68,6 @@ export default function AgentCard({
               &ldquo;{trunc(tagline, 100)}&rdquo;
             </p>
           )}
-          {persona?.greeting && !tagline && (
-            <p className="text-xs text-n-muted line-clamp-2 leading-snug">
-              {trunc(persona.greeting, 100)}
-            </p>
-          )}
           <div className="flex flex-wrap items-center gap-2 pt-0.5">
             {listing?.listed && listing.price != null && (
               <span className="text-[10px] font-mono text-emerald-700 dark:text-emerald-400">

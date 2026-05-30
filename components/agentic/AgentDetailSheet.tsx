@@ -149,17 +149,6 @@ export default function AgentDetailSheet({
               </div>
             )}
 
-            {(persona?.greeting || info?.greeting) && (
-              <section className="rounded-lg border border-n-border bg-n-surface px-3 py-3">
-                <p className="text-[10px] font-mono text-n-faint uppercase tracking-wider mb-1.5">
-                  greeting
-                </p>
-                <p className="text-sm text-n-text leading-relaxed">
-                  &ldquo;{persona?.greeting || info?.greeting}&rdquo;
-                </p>
-              </section>
-            )}
-
             {card?.skills && card.skills.length > 0 && (
               <section>
                 <p className="text-[10px] font-mono text-n-faint uppercase tracking-wider mb-2 flex items-center gap-1.5">
@@ -173,10 +162,17 @@ export default function AgentDetailSheet({
                     >
                       <p className="text-sm font-mono font-medium text-n-text">{skill.name}</p>
                       <p className="text-xs text-n-muted mt-0.5 leading-snug">{skill.description}</p>
-                      {skill.examples?.[0] && (
-                        <p className="text-[11px] text-n-faint italic mt-1.5">
-                          e.g. &ldquo;{trunc(skill.examples[0], 80)}&rdquo;
-                        </p>
+                      {skill.examples && skill.examples.length > 0 && (
+                        <div className="mt-2 space-y-2">
+                          {skill.examples.map((example, i) => (
+                            <p
+                              key={i}
+                              className="text-xs text-n-text leading-relaxed rounded-md border border-n-border/80 bg-[var(--white)] px-2.5 py-2 whitespace-pre-wrap"
+                            >
+                              {example}
+                            </p>
+                          ))}
+                        </div>
                       )}
                       {skill.tags && (
                         <div className="flex flex-wrap gap-1 mt-2">
