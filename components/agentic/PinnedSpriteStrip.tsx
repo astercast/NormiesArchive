@@ -13,9 +13,14 @@ const FOOT_BELOW = SPR_H - ANC_Y;
 const FRAME_PX = SPR_W;
 const SPRITE_HIT_PAD = 4;
 const MIN_SEP = SPR_W * 0.72;
-const PREVIEW_SPEED = 0.38;
-const WANDER_ACCEL = 0.018;
-const PREVIEW_WALK_MS = 180;
+const PREVIEW_SPEED = 0.2;
+const WANDER_ACCEL = 0.008;
+const PREVIEW_WALK_MS = 260;
+
+/** Wide desktop strips feel faster at the same px/s; scale down as stage grows. */
+function widthSpeedScale(cw: number): number {
+  return Math.min(1, Math.max(0.22, 520 / cw));
+}
 
 interface Body {
   fx: number;
@@ -38,7 +43,7 @@ function pickTarget(minFx: number, maxFx: number, minFy: number, maxFy: number) 
   return {
     tx: minFx + Math.random() * Math.max(1, maxFx - minFx),
     ty: minFy + Math.random() * Math.max(1, maxFy - minFy),
-    until: performance.now() + 2800 + Math.random() * 3200,
+    until: performance.now() + 4500 + Math.random() * 5500,
   };
 }
 
@@ -50,13 +55,14 @@ function mkBody(cw: number, sh: number, index: number, total: number): Body {
   const slot = total > 1 ? index / (total - 1) : 0.5;
   const fx = minFx + slot * Math.max(1, maxFx - minFx) + (Math.random() - 0.5) * 16;
   const fy = minFy + Math.random() * Math.max(1, maxFy - minFy);
-  const speed = (0.35 + Math.random() * 0.35) * BASE_SPEED * PREVIEW_SPEED;
+  const sf = widthSpeedScale(cw);
+  const speed = (0.25 + Math.random() * 0.25) * BASE_SPEED * PREVIEW_SPEED * sf;
   const w = pickTarget(minFx, maxFx, minFy, maxFy);
   return {
     fx,
     fy,
     vx: Math.random() < 0.5 ? speed : -speed,
-    vy: (Math.random() - 0.5) * 0.18,
+    vy: (Math.random() - 0.5) * 0.1 * sf,
     facing: Math.random() < 0.5 ? 1 : -1,
     wanderTx: w.tx,
     wanderTy: w.ty,
@@ -112,6 +118,7 @@ export default function PinnedSpriteStrip({ tokenIds, dark, onSelect }: Props) {
       const cw = stage?.clientWidth ?? 360;
       const sh = stage?.clientHeight ?? 96;
       const ids = idsRef.current;
+      const sf = widthSpeedScale(cw);
       const minFx = ANC_X + 4;
       const maxFx = cw - (SPR_W - ANC_X) - 4;
       const minFy = ANC_Y + 2;
@@ -132,21 +139,21 @@ export default function PinnedSpriteStrip({ tokenIds, dark, onSelect }: Props) {
         const dy = b.wanderTy - b.fy;
         const dist = Math.hypot(dx, dy);
         if (dist > 4) {
-          b.vx += (dx / dist) * WANDER_ACCEL * dt;
-          b.vy += (dy / dist) * WANDER_ACCEL * dt;
+          b.vx += (dx / dist) * WANDER_ACCEL * dt * sf;
+          b.vy += (dy / dist) * WANDER_ACCEL * dt * sf;
         }
 
-        b.fx += b.vx * (dt / 22);
-        b.fy += b.vy * (dt / 22);
-        b.vx *= 0.94;
-        b.vy *= 0.94;
+        b.fx += b.vx * (dt / 34) * sf;
+        b.fy += b.vy * (dt / 34) * sf;
+        b.vx *= 0.96;
+        b.vy *= 0.96;
 
         if (b.fx < minFx) { b.fx = minFx; b.vx = Math.abs(b.vx); b.facing = 1; }
         if (b.fx > maxFx) { b.fx = maxFx; b.vx = -Math.abs(b.vx); b.facing = -1; }
         if (b.fy < minFy) { b.fy = minFy; b.vy = Math.abs(b.vy); }
         if (b.fy > maxFy) { b.fy = maxFy; b.vy = -Math.abs(b.vy); }
 
-        if (Math.abs(b.vx) > 0.15) b.facing = b.vx > 0 ? 1 : -1;
+        if (Math.abs(b.vx) > 0.08) b.facing = b.vx > 0 ? 1 : -1;
 
         const el = spriteRefs.current.get(id);
         if (el) {
