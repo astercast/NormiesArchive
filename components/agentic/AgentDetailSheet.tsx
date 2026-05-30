@@ -23,10 +23,8 @@ interface Props {
   loading: boolean;
   dark?: boolean;
   pinned: boolean;
-  onFloor: boolean;
   pinDisabled: boolean;
   onClose: () => void;
-  onSummon: () => void;
   onTogglePin: () => void;
 }
 
@@ -37,10 +35,8 @@ export default function AgentDetailSheet({
   loading,
   dark,
   pinned,
-  onFloor,
   pinDisabled,
   onClose,
-  onSummon,
   onTogglePin,
 }: Props) {
   const info = bundle?.info;
@@ -110,29 +106,20 @@ export default function AgentDetailSheet({
               </div>
             )}
 
-            {/* Actions */}
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={onSummon}
-                className="flex-1 min-h-[48px] px-4 text-sm font-mono rounded-lg bg-cyan-600 text-white hover:bg-cyan-500 transition-colors touch-manipulation"
-              >
-                {onFloor ? "On floor" : "Summon to floor"}
-              </button>
-              <button
-                type="button"
-                onClick={onTogglePin}
-                disabled={pinDisabled}
-                className={`min-h-[48px] px-4 text-sm font-mono rounded-lg border transition-colors touch-manipulation disabled:opacity-40 ${
-                  pinned
-                    ? "border-cyan-500 bg-cyan-50 dark:bg-cyan-950/40 text-cyan-700 dark:text-cyan-300"
-                    : "border-n-border text-n-muted hover:border-n-text"
-                }`}
-              >
-                <Star className={`w-4 h-4 inline mr-1 ${pinned ? "fill-cyan-500 text-cyan-500" : ""}`} />
-                {pinned ? "Pinned" : "Pin"}
-              </button>
-            </div>
+            {/* Pin */}
+            <button
+              type="button"
+              onClick={onTogglePin}
+              disabled={pinDisabled}
+              className={`w-full min-h-[48px] px-4 text-sm font-mono rounded-lg border transition-colors touch-manipulation disabled:opacity-40 ${
+                pinned
+                  ? "border-cyan-500 bg-cyan-50 dark:bg-cyan-950/40 text-cyan-700 dark:text-cyan-300"
+                  : "border-n-border text-n-muted hover:border-n-text"
+              }`}
+            >
+              <Star className={`w-4 h-4 inline mr-1 ${pinned ? "fill-cyan-500 text-cyan-500" : ""}`} />
+              {pinned ? "Pinned" : "Pin to lounge"}
+            </button>
 
             {/* OpenSea listing */}
             {listing?.listed && listing.price != null && (

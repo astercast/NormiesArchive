@@ -12,7 +12,6 @@ interface Props {
   listing?: { listed: boolean; price?: number; currency?: string } | null;
   discovered?: boolean;
   pinned?: boolean;
-  onFloor?: boolean;
   dark?: boolean;
   onClick: () => void;
 }
@@ -23,7 +22,6 @@ export default function AgentCard({
   listing,
   discovered,
   pinned,
-  onFloor,
   dark,
   onClick,
 }: Props) {
@@ -39,11 +37,9 @@ export default function AgentCard({
       className={`w-full text-left rounded-xl border p-3 touch-manipulation transition-all active:scale-[0.98] ${
         pinned
           ? "border-cyan-400/70 bg-cyan-50/80 dark:bg-cyan-950/30 ring-1 ring-cyan-400/30"
-          : onFloor
-            ? "border-cyan-300/50 bg-n-surface"
-            : discovered
-              ? "border-violet-300/40 bg-violet-50/30 dark:bg-violet-950/20"
-              : "border-n-border bg-[var(--white)] hover:border-n-muted"
+          : discovered
+            ? "border-violet-300/40 bg-violet-50/30 dark:bg-violet-950/20"
+            : "border-n-border bg-[var(--white)] hover:border-n-muted"
       }`}
     >
       <div className="flex gap-3">
@@ -69,11 +65,6 @@ export default function AgentCard({
               {pinned && (
                 <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-700 dark:text-cyan-300">
                   pinned
-                </span>
-              )}
-              {onFloor && (
-                <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-n-surface border border-n-border text-n-muted">
-                  on floor
                 </span>
               )}
             </div>

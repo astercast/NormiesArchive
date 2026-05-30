@@ -3,9 +3,9 @@ import { Suspense } from "react";
 import AgenticLoungeClient from "./AgenticLoungeClient";
 
 export const metadata: Metadata = {
-  title: "The Hive — Agentic Lounge",
+  title: "Agentic Lounge",
   description:
-    "The world's first ERC-8004 persona resonance lounge. Swipe to discover agents, witness live theatre dialogues, and grow your constellation of bonds.",
+    "Browse every ERC-8004 Normie agent — personas, skills, registered services, and OpenSea listings in one identity registry.",
 };
 
 export default function AgenticLoungePage() {

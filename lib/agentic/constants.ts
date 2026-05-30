@@ -2,7 +2,7 @@ export const AGENTS_API = "https://api.normies.art";
 export const SPRITES_API = "https://fullnormies.vercel.app/api/v1";
 
 export const PASSCODE = "4356";
-export const LS_UNLOCK = "nl_unlocked_v3";
+export const LS_UNLOCK = "nl_unlocked_v6";
 export const LS_DISCOVERED = "nl_discovered_v5";
 export const LS_PINNED = "nl_pinned_v5";
 export const LS_WITNESS = "nl_witness_v5";
