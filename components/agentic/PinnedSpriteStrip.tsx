@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { SPRITES_API, WALK_FRAME_MS, BASE_SPEED } from "@/lib/agentic/constants";
+import { SPRITES_API, BASE_SPEED } from "@/lib/agentic/constants";
 
 /** Smaller sprites in the fixed-height preview strip (container stays h-24 / h-28). */
 const PREVIEW_SCALE = 1;
@@ -13,6 +13,9 @@ const FOOT_BELOW = SPR_H - ANC_Y;
 const FRAME_PX = SPR_W;
 const SPRITE_HIT_PAD = 4;
 const MIN_SEP = SPR_W * 0.72;
+const PREVIEW_SPEED = 0.38;
+const WANDER_ACCEL = 0.018;
+const PREVIEW_WALK_MS = 180;
 
 interface Body {
   fx: number;
@@ -35,7 +38,7 @@ function pickTarget(minFx: number, maxFx: number, minFy: number, maxFy: number) 
   return {
     tx: minFx + Math.random() * Math.max(1, maxFx - minFx),
     ty: minFy + Math.random() * Math.max(1, maxFy - minFy),
-    until: performance.now() + 1800 + Math.random() * 2400,
+    until: performance.now() + 2800 + Math.random() * 3200,
   };
 }
 
@@ -47,13 +50,13 @@ function mkBody(cw: number, sh: number, index: number, total: number): Body {
   const slot = total > 1 ? index / (total - 1) : 0.5;
   const fx = minFx + slot * Math.max(1, maxFx - minFx) + (Math.random() - 0.5) * 16;
   const fy = minFy + Math.random() * Math.max(1, maxFy - minFy);
-  const speed = (0.5 + Math.random() * 0.5) * BASE_SPEED * 0.85;
+  const speed = (0.35 + Math.random() * 0.35) * BASE_SPEED * PREVIEW_SPEED;
   const w = pickTarget(minFx, maxFx, minFy, maxFy);
   return {
     fx,
     fy,
     vx: Math.random() < 0.5 ? speed : -speed,
-    vy: (Math.random() - 0.5) * 0.3,
+    vy: (Math.random() - 0.5) * 0.18,
     facing: Math.random() < 0.5 ? 1 : -1,
     wanderTx: w.tx,
     wanderTy: w.ty,
@@ -97,7 +100,7 @@ export default function PinnedSpriteStrip({ tokenIds, dark, onSelect }: Props) {
         walkFrames.current.set(id, nf);
         el.style.backgroundPosition = `${-nf * FRAME_PX + SPRITE_HIT_PAD}px ${SPRITE_HIT_PAD}px`;
       }
-    }, WALK_FRAME_MS);
+    }, PREVIEW_WALK_MS);
     return () => clearInterval(t);
   }, []);
 
@@ -129,14 +132,14 @@ export default function PinnedSpriteStrip({ tokenIds, dark, onSelect }: Props) {
         const dy = b.wanderTy - b.fy;
         const dist = Math.hypot(dx, dy);
         if (dist > 4) {
-          b.vx += (dx / dist) * 0.04 * dt;
-          b.vy += (dy / dist) * 0.04 * dt;
+          b.vx += (dx / dist) * WANDER_ACCEL * dt;
+          b.vy += (dy / dist) * WANDER_ACCEL * dt;
         }
 
-        b.fx += b.vx * (dt / 16);
-        b.fy += b.vy * (dt / 16);
-        b.vx *= 0.92;
-        b.vy *= 0.92;
+        b.fx += b.vx * (dt / 22);
+        b.fy += b.vy * (dt / 22);
+        b.vx *= 0.94;
+        b.vy *= 0.94;
 
         if (b.fx < minFx) { b.fx = minFx; b.vx = Math.abs(b.vx); b.facing = 1; }
         if (b.fx > maxFx) { b.fx = maxFx; b.vx = -Math.abs(b.vx); b.facing = -1; }
